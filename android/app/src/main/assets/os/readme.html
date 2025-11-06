@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Project KEVA — README</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap');
+  html, body {
+    height: 100%;
+    margin: 0;
+    background: #000;
+    color: #0ff;
+    font-family: 'Share Tech Mono', monospace;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  .bar {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 10px 16px;
+    border-bottom: 1px solid rgba(0,255,255,0.2);
+    display: flex;
+    gap: 12px;
+    align-items: center;
+  }
+  .path { font-weight: 700; color: #0ff; }
+  .lang {
+    margin-left: auto;
+    display: inline-flex;
+    gap: 6px;
+  }
+  .lang button {
+    background: #00eaff;
+    color: #000;
+    border: none;
+    border-radius: 6px;
+    padding: 6px 10px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  .wrap {
+    width: 90vw;
+    max-width: 640px;   /* == agents window */
+    min-height: 0;
+    box-sizing: border-box;
+    border: 1px solid rgba(0,255,255,0.4);
+    border-radius: 10px;
+    margin: 16px auto;
+    padding: 16px;
+    box-shadow: 0 0 20px rgba(0,255,255,0.2);
+    background:
+      radial-gradient(120% 200% at 0% 0%, rgba(0,255,255,0.06), transparent 60%),
+      radial-gradient(120% 200% at 100% 100%, rgba(255,0,255,0.06), transparent 60%);
+  }
+  pre {
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    margin: 0;
+    line-height: 1.3;
+    color: #cfffff;
+  }
+</style>
+</head>
+<body>
+  <div class="bar">
+    <span class="path">/os/text/readme_<span id="langlabel">en</span>.txt</span>
+    <div class="lang">
+      <button id="btnEn">EN</button>
+      <button id="btnZh">中文</button>
+    </div>
+  </div>
+  <div class="wrap">
+    <pre id="content">Loading…</pre>
+  </div>
+<script>
+  let lang = 'en';
+  const $ = (s)=>document.querySelector(s);
+  const load = async () => {
+    try {
+      const res = await fetch('./text/readme_' + lang + '.txt');
+      const txt = await res.text();
+      $('#content').textContent = txt;
+      $('#langlabel').textContent = lang;
+    } catch (e) {
+      $('#content').textContent = 'Failed to load README: ' + (e.message || e);
+    }
+  };
+  $('#btnEn').onclick = () => { lang = 'en'; load(); };
+  $('#btnZh').onclick = () => { lang = 'zh'; load(); };
+  load();
+</script>
+</body>
+</html>

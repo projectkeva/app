@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Project KEVA - Desktop</title>
+<meta http-equiv="Content-Security-Policy" content="default-src * 'unsafe-inline' data: blob: file:;">
+<link rel="stylesheet" href="theme/retro/style.css"/>
+<script src="./i18n.js"></script>
+<style>
+html, body { margin:0; padding:0; height:100%; background:#000!important;}
+.main-window{width:90%;height:90%;margin:0 auto;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%) scaleY(0);transform-origin:center;border-radius:16px;box-shadow:0 0 30px rgba(255,255,255,0.15);overflow:hidden;opacity:1;animation:windowExpand 0.8s ease forwards;background:linear-gradient(180deg,#1b3de4 0%,#132cbe 45%,#0b1e99 100%);}
+@keyframes windowExpand{to{transform:translate(-50%,-50%) scaleY(1);opacity:1;}}
+.desktop-area{width:100%;height:100%;box-sizing:border-box;padding:24px;display:flex;flex-direction:column;justify-content:flex-start;align-items:flex-start;position:relative;}
+.desktop-area > *:not(.taskbar){background:transparent!important;}
+
+
+.desktop-area .desktop-icons {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: flex-start;
+  padding-top: 32px;     
+  padding-bottom: 32px;
+}
+
+.desktop-area .desktop-icons .icon {
+  margin: 12px 18px;   
+  text-align: center;
+}
+
+
+
+.desktop-area .desktop-icons img {
+  width: calc(64px * var(--scale));
+  height: calc(64px * var(--scale));
+}
+
+.desktop-area .desktop-icons .icon span {
+  display: block;
+  width: calc(64px * var(--scale));
+  text-align: center;
+  margin-top: 10px;             
+  white-space: normal;
+  word-break: break-word;
+  font-size: calc(0.85em * var(--scale));
+}
+.desktop-area .taskbar{position:absolute;left:0;right:0;bottom:0;height:44px;background:#808080;z-index:2;border-top:1px solid rgba(0,0,0,0.25);display:flex;align-items:center;justify-content:space-between;padding:0 10px;box-shadow:inset 0 1px 0 rgba(255,255,255,0.4);}
+.desktop-area .taskbar, .desktop-area .taskbar *{font-size:calc(0.7em * var(--scale));}
+.desktop-area .taskbar .start{height:calc(100% - 8px);margin:4px 0;box-sizing:border-box;background-color:rgba(0,0,0,0.12);color:#fff;border:1px solid rgba(255,255,255,0.06);padding:0 14px;display:inline-flex;align-items:center;justify-content:center;border-radius:6px;cursor:pointer;}
+.desktop-area .taskbar-right{display:inline-flex;align-items:center;gap:8px;}
+.desktop-area .taskbar #langToggle{height:calc(100% - 14px);margin:7px 0;padding:0 8px;background:rgba(0,0,0,0.12);color:#fff;border:1px solid rgba(255,255,255,0.06);border-radius:6px;display:inline-flex;align-items:center;justify-content:center;font-size:calc(0.9em * var(--scale));cursor:pointer;}
+.desktop-area .taskbar #langToggle:hover{background:rgba(255,255,255,0.06);}
+.notepad-window{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:500px;background:#f0f0f0;border:1px solid #999;box-shadow:0 4px 20px rgba(0,0,0,0.3);border-radius:6px;overflow:hidden;display:none;z-index:100;}
+.notepad-window .title-bar{background:#e0e0e0;padding:8px 12px;display:flex;justify-content:space-between;align-items:center;cursor:move;user-select:none;border-bottom:1px solid #ccc;}
+.notepad-window .close-btn{width:20px;height:20px;background:#ff5f57;border:none;border-radius:50%;color:rgba(0,0,0,0.4);cursor:pointer;font-size:14px;line-height:1;}
+.notepad-window .close-btn:hover{background:#ff4444;color:rgba(0,0,0,0.6);}
+.notepad-window .content{padding:16px;background:#fff;font-family:system-ui;font-size:14px;line-height:1.5;white-space:pre-wrap;height:300px;overflow-y:auto;}
+.start-menu{position:absolute;left:10px;bottom:calc(44px + 8px);width:220px;background:#222;color:#fff;border-radius:8px;padding:8px;box-shadow:0 6px 18px rgba(0,0,0,0.55);display:none;z-index:999;}
+.start-menu label{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:6px;cursor:pointer;}
+.start-menu label:hover{background:rgba(255,255,255,0.03);}
+.start-menu input[type="checkbox"]{width:16px;height:16px;accent-color:#6ea0ff;}
+@media(max-width:768px){.main-window{width:95%;height:85%;}}
+/* ==== Agents ==== */
+#agentsWindow {
+  width: 80%;
+  height: 80%;
+  max-width: 1600px;
+  max-height: 950px;
+  background: #000; 
+  border: 1px solid #333;
+  border-radius: 8px;
+  box-shadow: 0 4px 30px rgba(0,0,0,0.4);
+  position: absolute;
+  left: 50%;
+  top: 55px;
+  transform: translateX(-50%);
+  overflow: hidden;
+  z-index: 100;
+}
+
+#agentsWindow .content {
+  position: absolute;
+  top: 32px;      
+  left: 0;
+  right: 0;
+  height: calc(100% - 32px); 
+  padding: 0;
+  margin: 0;
+  background: #000;
+  overflow: hidden; 
+}
+
+#agentsWindow iframe {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  border: none;
+  display: block;
+  background: #000;
+}
+
+:root{--scale:1}
+/* === KEVA mobile layout unify (injected) === */
+#readmeWindow, #downloadWindow, #agentsWindow {
+  width: 80% !important;
+  height: 80% !important;
+  max-width: 1600px !important;
+  max-height: 950px !important;
+  left: 50% !important;
+  top: 55px !important;
+  transform: translateX(-50%) !important;
+  border-radius: 8px !important;
+  box-shadow: 0 4px 30px rgba(0,0,0,0.4) !important;
+  background: #000 !important;
+  display: none;
+}
+#readmeWindow .content, #downloadWindow .content, #agentsWindow .content {
+  position: absolute !important;
+  top: 32px !important;
+  left: 0 !important; right: 0 !important;
+  height: calc(100% - 32px) !important;
+  overflow: auto !important;
+  padding: 16px;
+  background: #000;
+  color: #cfffff;
+}
+#agentsWindow .content { padding: 0; overflow: hidden; } /* iframe 全铺 */
+#agentsWindow iframe { width: 100%; height: 100%; border: 0; display: block; background: #000; }
+@media (max-width: 768px) {
+  #readmeWindow, #downloadWindow, #agentsWindow { width: 95% !important; height: 85% !important; }
+}
+
+</style>
+<script>
+
+function updateDesktopScale() {
+  const w = window.innerWidth;
+  const h = window.innerHeight;
+
+let scale = (w / 400) * 0.45;
+if (scale < 0.9) scale = 0.9;
+if (scale > 1.3) scale = 1.3;
+
+  document.querySelectorAll('.desktop-area, .desktop-area *')
+    .forEach(el => el.style.setProperty('--scale', scale));
+}
+window.addEventListener('resize', updateDesktopScale);
+window.addEventListener('orientationchange', updateDesktopScale);
+window.addEventListener('load', updateDesktopScale);
+</script>
+
+
+</head>
+<body>
+<div class="main-window">
+  <div class="desktop-area">
+    <div class="desktop-icons" id="icons">
+      <div class="icon" data-app="keva"><img src="theme/retro/icons/keva.png"/><span>Node</span></div>
+      <div class="icon" data-app="wallet"><img src="theme/retro/icons/wallet.png"/><span>Wallet</span></div>
+      <div class="icon" data-app="download"><img src="theme/retro/icons/download.png"/><span>Download</span></div>
+      <div class="icon" data-app="id"><img src="theme/retro/icons/id.png"/><span>Agents</span></div>
+      <div class="icon" data-app="blog"><img src="theme/retro/icons/blog.png"/><span>Blog</span></div>
+      <div class="icon" data-app="pool"><img src="theme/retro/icons/pool.png"/><span>Pool</span></div>
+      <div class="icon" data-app="exchange"><img src="theme/retro/icons/exchange.png"/><span>Exchange</span></div>
+      <div class="icon" data-app="bitcoin"><img src="theme/retro/icons/bitcoin.png"/><span>Bitcoin</span></div>
+      <div class="icon" data-app="dogecoin"><img src="theme/retro/icons/dogecoin.png"/><span>Dogecoin</span></div>
+      <div class="icon" data-app="ethereum"><img src="theme/retro/icons/ethereum.png"/><span>Ethereum</span></div>
+      <div class="icon" data-app="chia"><img src="theme/retro/icons/chia.png"/><span>Chia</span></div>
+      <div class="icon" data-app="monero"><img src="theme/retro/icons/monero.png"/><span>Monero</span></div>
+      <div class="icon" data-app="kevacoin"><img src="theme/retro/icons/kevacoin.png"/><span>KevaCoin</span></div>
+      <div class="icon" data-app="ravencoin"><img src="theme/retro/icons/ravencoin.png"/><span>Ravencoin</span></div>
+      <div class="icon" data-app="readme"><img src="theme/retro/icons/notebook.png"/><span>Read mee！</span></div>
+    </div>
+
+    <div class="taskbar">
+      <div class="taskbar-left"><button class="start">Start</button></div>
+      <div class="taskbar-right">
+        <button class="lang" id="langToggle">中</button>
+        <div class="clock" id="clock">00:00</div>
+      </div>
+    </div>
+
+    <div class="notepad-window" id="readmeWindow">
+      <div class="title-bar"><span>README</span><button class="close-btn">×</button></div>
+      <div class="content" lang="en"></div>
+      <div class="content" lang="zh"></div>
+    </div>
+
+    <div class="notepad-window" id="downloadWindow">
+      <div class="title-bar"><span>Downloads</span><button class="close-btn">×</button></div>
+      <div class="content" lang="en"></div>
+      <div class="content" lang="zh"></div>
+    </div>
+
+<div class="notepad-window" id="agentsWindow">
+  <div class="title-bar"><span>Project KEVA Agents</span><button class="close-btn">×</button></div>
+  <div class="content" style="padding:0;">
+    <iframe src="agents/index.html" style="width:100%;height:100%;border:0;"></iframe>
+  </div>
+</div>
+
+
+    <div class="start-menu" id="startMenu" aria-hidden="true">
+      <form>
+        <label><input type="checkbox" data-app="keva" checked> Node</label>
+        <label><input type="checkbox" data-app="id" checked> Agents</label>
+        <label><input type="checkbox" data-app="readme" checked> Read mee！</label>
+        <label><input type="checkbox" data-app="download" checked> Download</label>
+        <label><input type="checkbox" data-app="wallet"> Wallet</label>
+        <label><input type="checkbox" data-app="pool"> Pool</label>
+        <label><input type="checkbox" data-app="exchange"> Exchange</label>
+        <label><input type="checkbox" data-app="blog"> Blog</label>
+        <label><input type="checkbox" data-app="bitcoin"> Bitcoin</label>
+        <label><input type="checkbox" data-app="dogecoin"> Dogecoin</label>
+        <label><input type="checkbox" data-app="ethereum"> Ethereum</label>
+        <label><input type="checkbox" data-app="chia"> Chia</label>
+        <label><input type="checkbox" data-app="monero"> Monero</label>
+        <label><input type="checkbox" data-app="kevacoin"> Kevacoin</label>
+        <label><input type="checkbox" data-app="ravencoin"> Ravencoin</label>
+      </form>
+    </div>
+  </div>
+</div>
+
+<script>
+function updateClock(){
+  const d=new Date();
+  document.getElementById('clock').textContent =
+    d.getHours().toString().padStart(2,'0') + ':' +
+    d.getMinutes().toString().padStart(2,'0');
+}
+setInterval(updateClock,1000);
+updateClock();
+
+function makeDraggable(win){
+  const bar=win.querySelector('.title-bar');
+  let drag=false,dx,dy;
+  bar.addEventListener('mousedown',e=>{
+    drag=true;dx=e.clientX-win.offsetLeft;dy=e.clientY-win.offsetTop;
+  });
+  document.addEventListener('mousemove',e=>{
+    if(!drag)return;
+    win.style.left=e.clientX-dx+'px';
+    win.style.top=e.clientY-dy+'px';
+    win.style.transform='';
+  });
+  document.addEventListener('mouseup',()=>drag=false);
+}
+document.querySelectorAll('.notepad-window').forEach(makeDraggable);
+document.querySelectorAll('.notepad-window .close-btn').forEach(btn=>{
+  btn.addEventListener('click',()=>btn.closest('.notepad-window').style.display='none');
+});
+
+// === 图标点击逻辑 ===
+document.querySelectorAll('.icon').forEach(icon=>{
+  icon.addEventListener('click',()=>{
+    const app=icon.dataset.app;
+    const links={
+      kevacoin:'https://kevacoin.org',
+      pool:'https://miningpoolstats.stream/kevacoin',
+      blog:'https://blogs.kevacoin.org',
+      bitcoin:'https://bitcoin.org',
+      ravencoin:'https://ravencoin.org',
+      chia:'https://www.chia.net',
+      dogecoin:'https://dogecoin.org',
+      ethereum:'https://ethereum.org',
+      monero:'https://www.getmonero.org'
+    };
+    if(app==='readme'){
+      document.getElementById('readmeWindow').style.display='block';
+    } else if(app==='download'){
+      document.getElementById('downloadWindow').style.display='block';
+    } else if(app==='id'){
+    document.getElementById('agentsWindow').style.display='block';
+  } else if(links[app]){
+      window.open(links[app],'_blank');
+    }
+  });
+});
+
+// === Start 菜单 ===
+(function(){
+  const btn=document.querySelector('.taskbar .start');
+  const menu=document.getElementById('startMenu');
+  function close(){menu.style.display='none';menu.setAttribute('aria-hidden','true');}
+  function open(){menu.style.display='block';menu.setAttribute('aria-hidden','false');}
+  function initializeIcons(){
+    const icons=document.querySelectorAll('.icon');
+    const checkboxes=document.querySelectorAll('#startMenu input[type="checkbox"]');
+    checkboxes.forEach(checkbox=>{
+      const app=checkbox.dataset.app;
+      const icon=document.querySelector(`.icon[data-app="${app}"]`);
+      if(!icon)return;
+      const saved=localStorage.getItem('desktop-visible-'+app);
+      if(saved!==null){checkbox.checked=saved==='1';}
+      icon.style.display=checkbox.checked?'':'none';
+      checkbox.addEventListener('change',()=>{
+        const visible=checkbox.checked;
+        icon.style.display=visible?'':'none';
+        localStorage.setItem('desktop-visible-'+app,visible?'1':'0');
+      });
+    });
+icons.forEach(icon=>{
+  const app = icon.dataset.app;
+  const saved = localStorage.getItem('desktop-visible-' + app);
+  const checkbox = document.querySelector(`#startMenu input[data-app="${app}"]`);
+
+  if (saved === null) {
+    const isChecked = checkbox && checkbox.checked;
+    localStorage.setItem('desktop-visible-' + app, isChecked ? '1' : '0');
+    icon.style.display = isChecked ? '' : 'none';
+  }
+});
+
+  }
+  btn.addEventListener('click',e=>{e.preventDefault();e.stopPropagation();menu.style.display==='block'?close():open();});
+  menu.addEventListener('click',e=>{e.stopPropagation();});
+  document.addEventListener('click',close);
+window.addEventListener('load', () => {
+  document.querySelectorAll('.icon').forEach(icon => icon.style.visibility = 'visible');
+});
+
+  initializeIcons();
+})();
+
+// === 语言切换 ===
+(function(){
+  const langBtn=document.getElementById('langToggle');
+  function updateLanguageVisibility(lang){
+    document.querySelectorAll('[lang]').forEach(el=>{
+      el.style.display=(el.getAttribute('lang')===lang)?'':'none';
+    });
+  }
+  function setLang(lang){
+    localStorage.setItem('ui-lang',lang);
+    document.documentElement.lang=lang;
+    langBtn.textContent=(lang==='en')?'中':'EN';
+    const map={
+      en:{keva:'Node',id:'Agents',readme:'Read mee！',download:'Download',startBtn:'Start'},
+      zh:{keva:'网络节点',id:'代理人',readme:'读我！',download:'下载文件夹',startBtn:'开始'}
+    };
+    for(const k in map[lang]){
+      if(k==='startBtn')continue;
+      const el=document.querySelector(`.icon[data-app="${k}"] span`);
+      if(el)el.textContent=map[lang][k];
+      const inp=document.querySelector(`#startMenu input[data-app="${k}"]`);
+      if(inp){const lab=inp.parentElement;lab.textContent='';lab.appendChild(inp);lab.append(' '+map[lang][k]);}
+    }
+    document.querySelector('.taskbar .start').textContent=map[lang].startBtn;
+    if(lang==='zh')document.documentElement.classList.add('lang-zh');
+    else document.documentElement.classList.remove('lang-zh');
+    updateLanguageVisibility(lang);
+  }
+  const saved=localStorage.getItem('ui-lang');
+  const initLang=(saved==='zh')?'zh':'en';
+  setLang(initLang);
+  langBtn.addEventListener('click',e=>{
+    e.stopPropagation();
+    const cur=document.documentElement.lang==='zh'?'zh':'en';
+    setLang(cur==='zh'?'en':'zh');
+  });
+})();
+
+// === 自动加载 README / Download 文本 ===
+async function loadText(lang,id,path){
+  try{
+    const res=await fetch(path);
+    const txt=await res.text();
+    const el=document.querySelector(`#${id} .content[lang="${lang}"]`);
+    if(el)el.innerHTML=txt;
+  }catch(err){console.warn('Failed to load',path,err);}
+}
+const textFiles={
+  readme:{en:'text/readme_en.txt',zh:'text/readme_zh.txt'},
+  download:{en:'text/download_en.txt',zh:'text/download_zh.txt'}
+};
+for(const win in textFiles){
+  for(const lang in textFiles[win]){
+    loadText(lang,`${win}Window`,textFiles[win][lang]);
+  }
+}
+</script>
+</body>
+</html>

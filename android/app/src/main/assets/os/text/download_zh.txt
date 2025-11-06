@@ -1,0 +1,8 @@
+kevacoin-linux — <a href="https://github.com/kevacoin-project/kevacoin/releases/download/v0.16.8.0/kevacoin-0.16.8.0.tar.gz" download>下载</a>
+
+kevacoin-win — <a href="https://github.com/kevacoin-project/kevacoin/releases/download/v0.16.8.0/kevacoin-0.16.8-win64-setup.exe" download>下载</a>
+
+kevacoin-mac — <a href="https://github.com/kevacoin-project/kevacoin/releases/download/v0.16.8.0/Kevacoin-Qt.dmg" download>下载</a>
+
+kevacoin-android.apk — <a href="https://github.com/kevacoin-project/keva_wallet/releases/download/v9.0.3/kevacoin-wallet_9.0.3.apk" download>下载</a>
+

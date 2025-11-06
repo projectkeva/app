@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>PROJECT KEVA AGENT ID</title>
+<script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap');
+html,body{
+  height:100%;margin:0;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;
+  background:#000;color:#00eaff;font-family:'Share Tech Mono',monospace;
+}
+.addrbar{display:flex;align-items:center;gap:10px;
+  padding:10px 16px;background:#000;
+  border-bottom:1px solid rgba(0,255,255,0.2);flex-shrink:0;}
+.path{font-weight:600;color:#0ff;}
+.input{flex:1;display:flex;align-items:center;gap:8px;
+  border:1px solid rgba(0,255,255,0.4);border-radius:6px;
+  background:#000;padding:8px 10px;}
+.input input{flex:1;border:none;outline:none;
+  font-family:'Share Tech Mono',monospace;font-size:13px;color:#0ff;background:#000;}
+#btnRand{background:#00eaff;color:#000;border:none;border-radius:6px;
+  padding:6px 14px;font-weight:600;cursor:pointer;box-shadow:0 0 8px #00eaff;}
+#btnRand:hover{opacity:.85}
+.agent-card {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;     /* ✅  */
+  width: 90vw;                 /* ✅  */
+  max-width: 640px;
+  min-height: 340px;
+  border: 1px solid rgba(0,255,255,0.4);
+  border-radius: 14px;
+  background: radial-gradient(circle at 50% 30%, #0b0b0b, #000);
+  box-shadow: 0 0 25px rgba(0,255,255,0.2);
+  padding: 20px;
+  overflow: hidden;
+  margin: auto;                /* ✅  */
+  transform: scale(1);         /* ✅  */
+  transform-origin: center center;
+}
+
+/* ✅  */
+@media (max-width: 700px) {
+  .agent-card {
+    transform: scale(0.9);
+  }
+}
+@media (max-width: 500px) {
+  .agent-card {
+    transform: scale(0.8);
+  }
+}
+
+.agent-card::before{content:"";position:absolute;inset:0;
+  background:linear-gradient(120deg,rgba(255,0,255,0.15),rgba(0,255,255,0.15),rgba(255,0,255,0.15));
+  filter:blur(40px);opacity:0.2;}
+.agent-left{position:relative;width:256px;height:256px;margin-right:20px;}
+.agent-left img{position:absolute;left:0;width:256px;image-rendering:pixelated;border-radius:8px;}
+#imgHead{top:0;height:174px;z-index:2;}
+#imgCloth{bottom:0;height:82px;z-index:1;}
+.agent-right{text-align:left;flex:1;z-index:1;}
+.title{font-size:13px;color:#88ffff;margin-bottom:8px;letter-spacing:1px;}
+.field{font-size:13px;color:#aef;margin:4px 0;}
+.label{color:#777;font-size:12px;}
+.status{font-weight:600;}
+.status.online{color:#0f0;animation:blink 1s infinite alternate;}
+.status.offline{color:#ff4444;text-shadow:0 0 8px #ff0000;animation:none;}
+.recover{color:#66ffff;font-size:12px;margin-top:6px;font-style:italic;}
+@keyframes blink{from{opacity:1;}to{opacity:.4;}}
+#hint{color:#888;font-size:11px;margin-top:10px;white-space:pre-wrap;line-height:1.35;text-align:center;}
+#controls{margin-top:16px;display:flex;gap:10px;justify-content:center;}
+#controls button{background:#00eaff;color:#000;border:none;border-radius:6px;
+  padding:6px 14px;font-weight:600;cursor:pointer;box-shadow:0 0 8px #00eaff;}
+#controls button:hover{opacity:.8;}
+</style>
+</head>
+<body>
+  <div class="addrbar" id="addrbar">
+    <div class="path">📁 /agents/</div>
+    <div class="input">
+      <input id="addr" placeholder="Enter ID (e.g. 32101)"/>
+      <button id="btnRand">Random</button>
+    </div>
+  </div>
+
+  <div class="agent-card" id="agentCard">
+    <div class="agent-left">
+      <img id="imgCloth" alt="cloth"/>
+      <img id="imgHead" alt="head"/>
+    </div>
+    <div class="agent-right">
+      <div class="title">PROJECT KEVA AGENT ID</div>
+      <div class="field"><span class="label">ID:</span> <span id="valID">—</span></div>
+      <div class="field"><span class="label">BLOCK:</span> <span id="valBlock">—</span></div>
+      <div class="field"><span class="label">EPOCH:</span> <span id="valEpoch">—</span></div>
+      <div class="field"><span class="label">STATUS:</span> <span class="status online" id="status">ONLINE</span></div>
+    </div>
+  </div>
+
+  <div id="hint"></div>
+
+  <div id="controls">
+    <button id="btnSave">💾 Save Card</button>
+    <button id="btnShare">📤 Share Card</button>
+  </div>
+
+<script>
+function randInt(min,max){return Math.floor(Math.random()*(max-min+1))+min;}
+function map(v,inMin,inMax,outMin,outMax){return outMin+(v-inMin)*(outMax-outMin)/(inMax-inMin);}
+async function sha256Bytes(message){
+  const enc=new TextEncoder();const data=enc.encode(message);
+  const hash=await crypto.subtle.digest("SHA-256",data);
+  return new Uint8Array(hash);
+}
+function u64(b){let v=0n;for(let i=0;i<8;i++)v=(v<<8n)|BigInt(b[i]);return v;}
+function getEpoch(block){if(block<2000000)return 1;if(block<3000000)return 2;return 3;}
+async function checkImageExists(url){
+  return new Promise(resolve=>{
+    const img=new Image();
+    img.onload=()=>resolve(true);
+    img.onerror=()=>resolve(false);
+    img.src=url;
+  });
+}
+async function updateAgent(id){
+  const s=id.toString();const d=parseInt(s[0]);const block=parseInt(s.slice(1,1+d));
+  const epoch=getEpoch(block);const seed=await sha256Bytes(id+"projectkeva");
+  const headIdx=Number(u64(seed.slice(0,8))%1000n)+1;
+  const clothIdx=Number(u64(seed.slice(8,16))%500n)+1;
+  const hue=map(seed[16],0,255,-30,30).toFixed(1);
+  const sat=(map(seed[17],0,255,-0.15,0.15)*100).toFixed(1);
+  const light=(map(seed[18],0,255,-0.10,0.10)*100).toFixed(1);
+  const headPath=`../asset/ep${epoch}/head/${headIdx}.png`;
+  const clothPath=`../asset/ep${epoch}/cloth/${clothIdx}.png`;
+
+  const headOK=await checkImageExists(headPath);
+  const clothOK=await checkImageExists(clothPath);
+
+  const status=document.getElementById("status");
+  const right=document.querySelector(".agent-right");
+  document.querySelectorAll(".recover").forEach(e=>e.remove());
+
+  if(headOK && clothOK){
+    document.getElementById("imgHead").src=headPath;
+    document.getElementById("imgCloth").src=clothPath;
+    const filter=`hue-rotate(${hue}deg) saturate(${100+parseFloat(sat)}%) brightness(${100+parseFloat(light)}%)`;
+    document.getElementById("imgHead").style.filter=filter;
+    document.getElementById("imgCloth").style.filter=filter;
+    status.textContent="ONLINE";
+    status.className="status online";
+  }else{
+    document.getElementById("imgHead").src="";
+    document.getElementById("imgCloth").src="";
+    status.textContent="OFFLINE";
+    status.className="status offline";
+    const msg=document.createElement("div");
+    msg.className="recover";
+    msg.textContent="the agent data is recovering...";
+    right.appendChild(msg);
+  }
+
+  document.getElementById("valID").textContent=id;
+  document.getElementById("valBlock").textContent=block;
+  document.getElementById("valEpoch").textContent=epoch;
+  document.getElementById("hint").textContent=`head:${headIdx} cloth:${clothIdx} hue:${hue}° sat:${sat}% light:${light}% src:ep${epoch}`;
+}
+document.getElementById("btnRand").addEventListener("click",async()=>{
+  const block=randInt(210,2999999);const tx=randInt(1,9);
+  const d=String(block).length;const id=Number(String(d)+String(block)+String(tx));
+  document.getElementById("addr").value=id;await updateAgent(id);
+});
+document.getElementById("addr").addEventListener("input",async e=>{
+  const v=e.target.value.trim();if(v) await updateAgent(v);
+});
+window.addEventListener("load",()=>{updateAgent(32101);});
+
+// Save transparent image (auto filename)
+document.getElementById("btnSave").addEventListener("click", async () => {
+  const addrbar=document.getElementById("addrbar");
+  const controls=document.getElementById("controls");
+  addrbar.style.display="none";controls.style.display="none";
+  const id=document.getElementById("valID").textContent || "unknown";
+  await html2canvas(document.getElementById("agentCard"),{backgroundColor:null}).then(canvas=>{
+    const link=document.createElement("a");
+    link.download=`xkeva_agent_${id}.png`;
+    link.href=canvas.toDataURL("image/png");
+    link.click();
+  });
+  addrbar.style.display="flex";controls.style.display="flex";
+});
+
+// Share card
+document.getElementById("btnShare").addEventListener("click",async()=>{
+  const addrbar=document.getElementById("addrbar");
+  const controls=document.getElementById("controls");
+  addrbar.style.display="none";controls.style.display="none";
+  await html2canvas(document.getElementById("agentCard"),{backgroundColor:null}).then(canvas=>{
+    canvas.toBlob(async blob=>{
+      const id=document.getElementById("valID").textContent || "unknown";
+      const file=new File([blob],`xkeva_agent_${id}.png`,{type:"image/png"});
+      if(navigator.canShare && navigator.canShare({files:[file]})){
+        await navigator.share({files:[file],title:"PROJECT KEVA AGENT ID"});
+      }else{alert("Share not supported in this browser.");}
+    });
+  });
+  addrbar.style.display="flex";controls.style.display="flex";
+});
+</script>
+</body>
+</html>

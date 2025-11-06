@@ -1,0 +1,13 @@
+
+#keva-lang-toggle {
+  position: absolute;
+  right: 160px; /* assume clock at far right; keep button to its left */
+  bottom: 8px;
+  font-family: inherit;
+  font-size: 12px;
+  padding: 2px 6px;
+  border: 1px solid rgba(255,255,255,0.3);
+  background: rgba(0,0,0,0.2);
+  cursor: pointer;
+  user-select: none;
+}
