@@ -1,4 +1,4 @@
- cd G:\an\android
+ cd G:\an\app\android
 ./gradlew assembleRelease
 
 pause
