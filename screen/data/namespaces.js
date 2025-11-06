@@ -43,6 +43,7 @@ import { HDSegwitP2SHWallet,  } from '../../class';
 import { FALLBACK_DATA_PER_BYTE_FEE } from '../../models/networkTransactionFees';
 import Biometric from '../../class/biometrics';
 import { Avatar, Button } from 'react-native-elements';
+import { createHash } from 'crypto';
 
 let BlueApp = require('../../BlueApp');
 let loc = require('../../loc');
@@ -63,6 +64,66 @@ import {
   waitPromise, populateReactions,
 } from '../../class/keva-ops';
 
+const HEAD_IMAGE_COUNT = 1000;
+
+const getEpochFromBlock = block => {
+  if (typeof block !== 'number' || Number.isNaN(block)) {
+    return null;
+  }
+  if (block < 2000000) {
+    return 1;
+  }
+  if (block < 3000000) {
+    return 2;
+  }
+  return 3;
+};
+
+const parseBlockFromShortcode = shortCode => {
+  if (shortCode === undefined || shortCode === null) {
+    return null;
+  }
+  const normalized = String(shortCode).trim();
+  if (!/^[0-9]+$/.test(normalized) || normalized.length < 2) {
+    return null;
+  }
+  const blockLength = parseInt(normalized[0], 10);
+  if (!Number.isFinite(blockLength) || blockLength <= 0 || normalized.length < 1 + blockLength) {
+    return null;
+  }
+  const blockStr = normalized.slice(1, 1 + blockLength);
+  const block = parseInt(blockStr, 10);
+  if (Number.isNaN(block)) {
+    return null;
+  }
+  return block;
+};
+
+const calculateHeadIndex = bytes => {
+  let remainder = 0;
+  for (let i = 0; i < bytes.length; i++) {
+    remainder = (remainder * 256 + bytes[i]) % HEAD_IMAGE_COUNT;
+  }
+  return remainder + 1;
+};
+
+const buildHeadAssetUri = shortCode => {
+  if (Platform.OS !== 'android') {
+    return null;
+  }
+  const block = parseBlockFromShortcode(shortCode);
+  if (block === null) {
+    return null;
+  }
+  const epoch = getEpochFromBlock(block);
+  if (epoch === null) {
+    return null;
+  }
+  const seed = createHash('sha256').update(`${shortCode}projectkeva`).digest();
+  const headIdx = calculateHeadIndex(seed.slice(0, 8));
+  return `file:///android_asset/os/asset/ep${epoch}/head/${headIdx}.png`;
+};
+
 const COPY_ICON = (<Icon name="ios-copy" size={22} color={KevaColors.extraLightText}
                          style={{ paddingVertical: 5, paddingHorizontal: 5, position: 'relative', left: -3 }}
                   />)
@@ -74,7 +135,18 @@ class Namespace extends React.Component {
 
   constructor(props) {
     super(props);
-    this.state = { loading: false, selectedImage: null };
+    this.state = {
+      loading: false,
+      selectedImage: null,
+      avatarCandidateUri: null,
+      avatarCandidateRequestId: 0,
+      avatarFailedUri: null,
+      generatedAvatarUri: null,
+    };
+
+    this._avatarRequestId = 0;
+    this._avatarHandle = null;
+    this._isMounted = false;
 
     this._active = new Animated.Value(0);
     this._style = {
@@ -110,6 +182,27 @@ class Namespace extends React.Component {
         outputRange: [1, 0.7],
       }),
     };
+  }
+
+  componentDidMount() {
+    this._isMounted = true;
+    this.prepareGeneratedAvatar(this.props.data);
+  }
+
+  componentDidUpdate(prevProps) {
+    const prevData = prevProps.data || {};
+    const currentData = this.props.data || {};
+    if (prevData.shortCode !== currentData.shortCode || prevData.id !== currentData.id) {
+      this.prepareGeneratedAvatar(currentData);
+    }
+  }
+
+  componentWillUnmount() {
+    this._isMounted = false;
+    if (this._avatarHandle && typeof this._avatarHandle.cancel === 'function') {
+      this._avatarHandle.cancel();
+    }
+    this._avatarHandle = null;
   }
 
   onInfo = () => {
@@ -172,18 +265,130 @@ class Namespace extends React.Component {
     return {titleAvatar: getInitials(name), colorAvatar: stringToColor(name)}
   }
 
+  prepareGeneratedAvatar = namespace => {
+    if (this._avatarHandle && typeof this._avatarHandle.cancel === 'function') {
+      this._avatarHandle.cancel();
+    }
+
+    const shortCode = namespace && namespace.shortCode;
+    if (!shortCode) {
+      if (this._isMounted) {
+        this.setState({
+          avatarCandidateUri: null,
+          avatarCandidateRequestId: 0,
+          avatarFailedUri: null,
+          generatedAvatarUri: null,
+        });
+      }
+      this._avatarHandle = null;
+      return;
+    }
+
+    const requestId = ++this._avatarRequestId;
+
+    const scheduleTask = () => {
+      this._avatarHandle = null;
+      const candidateUri = buildHeadAssetUri(shortCode);
+      if (!this._isMounted || requestId !== this._avatarRequestId) {
+        return;
+      }
+      if (!candidateUri) {
+        this.setState({
+          avatarCandidateUri: null,
+          avatarCandidateRequestId: 0,
+          avatarFailedUri: null,
+          generatedAvatarUri: null,
+        });
+        return;
+      }
+      this.setState(prevState => {
+        const isSameCandidate = prevState.avatarCandidateUri === candidateUri;
+        return {
+          avatarCandidateUri: candidateUri,
+          avatarCandidateRequestId: requestId,
+          avatarFailedUri: null,
+          generatedAvatarUri: isSameCandidate ? prevState.generatedAvatarUri : null,
+        };
+      });
+    };
+
+    const handle = InteractionManager.runAfterInteractions(() => {
+      scheduleTask();
+    });
+
+    if (handle && typeof handle.cancel === 'function') {
+      this._avatarHandle = handle;
+    } else {
+      scheduleTask();
+    }
+  }
+
+  onAvatarLoadSuccess = (uri, requestId) => {
+    if (!this._isMounted || requestId !== this._avatarRequestId) {
+      return;
+    }
+    this.setState({
+      generatedAvatarUri: uri,
+      avatarFailedUri: null,
+    });
+  }
+
+  onAvatarLoadError = (uri, requestId) => {
+    if (!this._isMounted || requestId !== this._avatarRequestId) {
+      return;
+    }
+    this.setState(prevState => {
+      if (prevState.avatarFailedUri === uri && prevState.generatedAvatarUri === null) {
+        return null;
+      }
+      return {
+        generatedAvatarUri: null,
+        avatarFailedUri: uri,
+      };
+    });
+  }
+
   render() {
     const namespace = this.props.data;
     const {canDelete, onDelete} = this.props;
     const {titleAvatar, colorAvatar} = this.getAvatar(namespace.displayName);
     const canTransfer = !canDelete;
     const isForSale = !!namespace.price;
+    const {
+      avatarCandidateUri,
+      avatarCandidateRequestId,
+      avatarFailedUri,
+      generatedAvatarUri,
+    } = this.state;
+
+    const shouldProbeAvatar = !!(avatarCandidateUri && avatarCandidateUri !== avatarFailedUri && avatarCandidateUri !== generatedAvatarUri);
+    const avatarSource = generatedAvatarUri ? { uri: generatedAvatarUri } : undefined;
+    const avatarContainerStyles = [styles.avatarContainer];
+    if (!avatarSource) {
+      avatarContainerStyles.push({ backgroundColor: colorAvatar });
+    }
+    const overlayStyle = avatarSource ? styles.avatarOverlay : { backgroundColor: colorAvatar };
 
     return (
       <Animated.View style={this._style}>
         <View style={styles.cardTitle} >
-          <View style={{padding: 5}}>
-            <Avatar rounded size="medium" title={titleAvatar} containerStyle={{backgroundColor: colorAvatar}}/>
+          <View style={styles.avatarWrapper}>
+            {shouldProbeAvatar && (
+              <Image
+                source={{ uri: avatarCandidateUri }}
+                style={styles.avatarProbe}
+                onLoad={() => this.onAvatarLoadSuccess(avatarCandidateUri, avatarCandidateRequestId)}
+                onError={() => this.onAvatarLoadError(avatarCandidateUri, avatarCandidateRequestId)}
+              />
+            )}
+            <Avatar
+              rounded
+              size="medium"
+              source={avatarSource}
+              title={!avatarSource ? titleAvatar : undefined}
+              containerStyle={avatarContainerStyles}
+              overlayContainerStyle={overlayStyle}
+            />
           </View>
           <View style={{ flex: 1, justifyContent: 'space-between', paddingHorizontal: 7, paddingTop: 10 }}>
             <View style={{ flex: 1 }} >
@@ -1154,6 +1359,23 @@ function mapStateToProps(state) {
 export default NamespacesScreen = connect(mapStateToProps)(Namespaces)
 
 var styles = StyleSheet.create({
+  avatarWrapper: {
+    padding: 5,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  avatarContainer: {
+    backgroundColor: 'transparent',
+  },
+  avatarOverlay: {
+    backgroundColor: 'transparent',
+  },
+  avatarProbe: {
+    width: 1,
+    height: 1,
+    position: 'absolute',
+    opacity: 0,
+  },
   topContainer: {
     flex: 1,
     backgroundColor: '#fff',
