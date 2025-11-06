@@ -44,10 +44,26 @@ import { timeConverter, getInitials, stringToColor } from "../../util";
 import Biometric from '../../class/biometrics';
 import { Avatar } from 'react-native-elements';
 import { extractMedia, getImageGatewayURL, removeMedia } from './mediaManager';
-import { buildHeadAssetUri } from '../../common/namespaceAvatar';
+import { buildHeadAssetUriCandidates } from '../../common/namespaceAvatar';
 
 
 const PLAY_ICON  = <MIcon name="play-arrow" size={50} color="#fff"/>;
+
+const selectAvatarCandidateUri = (candidateUris = [], failedUris = [], generatedUri = null) => {
+  for (const candidate of candidateUris) {
+    if (!candidate) {
+      continue;
+    }
+    if (candidate === generatedUri) {
+      continue;
+    }
+    if (failedUris && failedUris.includes(candidate)) {
+      continue;
+    }
+    return candidate;
+  }
+  return null;
+};
 
 class Item extends React.Component {
 
@@ -222,9 +238,9 @@ class KeyValues extends React.Component {
       isRefreshing: false,
       totalToFetch: 0,
       fetched: 0,
-      avatarCandidateUri: null,
+      avatarCandidateUris: [],
       avatarCandidateRequestId: 0,
-      avatarFailedUri: null,
+      avatarFailedUris: [],
       generatedAvatarUri: null,
     };
     this.onEndReachedCalledDuringMomentum = true;
@@ -433,9 +449,9 @@ class KeyValues extends React.Component {
     if (!shortCode) {
       if (this._isMounted) {
         this.setState({
-          avatarCandidateUri: null,
+          avatarCandidateUris: [],
           avatarCandidateRequestId: 0,
-          avatarFailedUri: null,
+          avatarFailedUris: [],
           generatedAvatarUri: null,
         });
       }
@@ -447,26 +463,29 @@ class KeyValues extends React.Component {
 
     const scheduleTask = () => {
       this._avatarHandle = null;
-      const candidateUri = buildHeadAssetUri(shortCode);
+      const candidateUris = buildHeadAssetUriCandidates(shortCode);
       if (!this._isMounted || requestId !== this._avatarRequestId) {
         return;
       }
-      if (!candidateUri) {
+      if (!candidateUris || candidateUris.length === 0) {
         this.setState({
-          avatarCandidateUri: null,
+          avatarCandidateUris: [],
           avatarCandidateRequestId: 0,
-          avatarFailedUri: null,
+          avatarFailedUris: [],
           generatedAvatarUri: null,
         });
         return;
       }
       this.setState(prevState => {
-        const isSameCandidate = prevState.avatarCandidateUri === candidateUri;
+        const prevCandidateUris = prevState.avatarCandidateUris || [];
+        const sameCandidates =
+          prevCandidateUris.length === candidateUris.length &&
+          prevCandidateUris.every((uri, idx) => uri === candidateUris[idx]);
         return {
-          avatarCandidateUri: candidateUri,
+          avatarCandidateUris: candidateUris,
           avatarCandidateRequestId: requestId,
-          avatarFailedUri: null,
-          generatedAvatarUri: isSameCandidate ? prevState.generatedAvatarUri : null,
+          avatarFailedUris: sameCandidates ? prevState.avatarFailedUris || [] : [],
+          generatedAvatarUri: sameCandidates ? prevState.generatedAvatarUri : null,
         };
       });
     };
@@ -488,7 +507,7 @@ class KeyValues extends React.Component {
     }
     this.setState({
       generatedAvatarUri: uri,
-      avatarFailedUri: null,
+      avatarFailedUris: [],
     });
   }
 
@@ -497,12 +516,13 @@ class KeyValues extends React.Component {
       return;
     }
     this.setState(prevState => {
-      if (prevState.avatarFailedUri === uri && prevState.generatedAvatarUri === null) {
+      const prevFailed = prevState.avatarFailedUris || [];
+      if (prevFailed.includes(uri) && prevState.generatedAvatarUri === null) {
         return null;
       }
       return {
         generatedAvatarUri: null,
-        avatarFailedUri: uri,
+        avatarFailedUris: prevFailed.concat(uri),
       };
     });
   }
@@ -985,9 +1005,9 @@ class KeyValues extends React.Component {
     );
 
     const {
-      avatarCandidateUri,
+      avatarCandidateUris,
       avatarCandidateRequestId,
-      avatarFailedUri,
+      avatarFailedUris,
       generatedAvatarUri,
     } = this.state;
 
@@ -999,7 +1019,8 @@ class KeyValues extends React.Component {
       avatarContainerStyles.push({ backgroundColor: fallbackColor });
     }
     const overlayStyle = avatarSource ? styles.avatarOverlay : { backgroundColor: fallbackColor };
-    const shouldProbeAvatar = !!(avatarCandidateUri && avatarCandidateUri !== avatarFailedUri && avatarCandidateUri !== generatedAvatarUri);
+    const avatarCandidateUri = selectAvatarCandidateUri(avatarCandidateUris, avatarFailedUris, generatedAvatarUri);
+    const shouldProbeAvatar = !!(avatarCandidateUri && avatarCandidateRequestId === this._avatarRequestId);
 
     let listHeader = null;
     if (mergeList) {

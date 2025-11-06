@@ -2,6 +2,7 @@ import { Platform } from 'react-native';
 const createHash = require('create-hash');
 
 const HEAD_IMAGE_COUNT = 1000;
+const ANDROID_ASSET_BASE_PATH = 'os/asset';
 
 const getEpochFromBlock = block => {
   if (typeof block !== 'number' || Number.isNaN(block)) {
@@ -44,10 +45,7 @@ const calculateHeadIndex = bytes => {
   return remainder + 1;
 };
 
-export const buildHeadAssetUri = shortCode => {
-  if (Platform.OS !== 'android') {
-    return null;
-  }
+const buildHeadAssetRelativePath = shortCode => {
   const block = parseBlockFromShortcode(shortCode);
   if (block === null) {
     return null;
@@ -58,7 +56,26 @@ export const buildHeadAssetUri = shortCode => {
   }
   const seed = createHash('sha256').update(`${shortCode}projectkeva`).digest();
   const headIdx = calculateHeadIndex(seed.slice(0, 8));
-  return `file:///android_asset/os/asset/ep${epoch}/head/${headIdx}.png`;
+  return `${ANDROID_ASSET_BASE_PATH}/ep${epoch}/head/${headIdx}.png`;
+};
+
+export const buildHeadAssetUriCandidates = shortCode => {
+  if (Platform.OS !== 'android') {
+    return [];
+  }
+  const relativePath = buildHeadAssetRelativePath(shortCode);
+  if (!relativePath) {
+    return [];
+  }
+  return [
+    `asset:/${relativePath}`,
+    `file:///android_asset/${relativePath}`,
+  ];
+};
+
+export const buildHeadAssetUri = shortCode => {
+  const [primary] = buildHeadAssetUriCandidates(shortCode);
+  return primary || null;
 };
 
 export const __namespaceAvatarInternals = {
@@ -66,4 +83,5 @@ export const __namespaceAvatarInternals = {
   getEpochFromBlock,
   parseBlockFromShortcode,
   calculateHeadIndex,
+  buildHeadAssetRelativePath,
 };
