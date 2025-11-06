@@ -43,7 +43,7 @@ import { HDSegwitP2SHWallet,  } from '../../class';
 import { FALLBACK_DATA_PER_BYTE_FEE } from '../../models/networkTransactionFees';
 import Biometric from '../../class/biometrics';
 import { Avatar, Button } from 'react-native-elements';
-import { createHash } from 'crypto';
+const createHash = require('create-hash');
 
 let BlueApp = require('../../BlueApp');
 let loc = require('../../loc');
