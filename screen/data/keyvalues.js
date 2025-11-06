@@ -44,6 +44,7 @@ import { timeConverter, getInitials, stringToColor } from "../../util";
 import Biometric from '../../class/biometrics';
 import { Avatar } from 'react-native-elements';
 import { extractMedia, getImageGatewayURL, removeMedia } from './mediaManager';
+import { buildHeadAssetUri } from '../../common/namespaceAvatar';
 
 
 const PLAY_ICON  = <MIcon name="play-arrow" size={50} color="#fff"/>;
@@ -221,9 +222,16 @@ class KeyValues extends React.Component {
       isRefreshing: false,
       totalToFetch: 0,
       fetched: 0,
+      avatarCandidateUri: null,
+      avatarCandidateRequestId: 0,
+      avatarFailedUri: null,
+      generatedAvatarUri: null,
     };
     this.onEndReachedCalledDuringMomentum = true;
     this.min_tx_num = -1;
+    this._avatarRequestId = 0;
+    this._avatarHandle = null;
+    this._isMounted = false;
   }
 
   static navigationOptions = ({ navigation }) => ({
@@ -344,6 +352,12 @@ class KeyValues extends React.Component {
       }
     }
 
+    if (nsData && nsData.shortCode && nsData.shortCode !== shortCode) {
+      shortCode = nsData.shortCode;
+      navigation.setParams({ shortCode });
+      this.prepareGeneratedAvatar(shortCode);
+    }
+
     if (nsData.value) {
       const value = JSON.parse(nsData.value);
       const {price, desc, addr} = value;
@@ -411,7 +425,90 @@ class KeyValues extends React.Component {
     return wallet;
   }
 
+  prepareGeneratedAvatar = shortCode => {
+    if (this._avatarHandle && typeof this._avatarHandle.cancel === 'function') {
+      this._avatarHandle.cancel();
+    }
+
+    if (!shortCode) {
+      if (this._isMounted) {
+        this.setState({
+          avatarCandidateUri: null,
+          avatarCandidateRequestId: 0,
+          avatarFailedUri: null,
+          generatedAvatarUri: null,
+        });
+      }
+      this._avatarHandle = null;
+      return;
+    }
+
+    const requestId = ++this._avatarRequestId;
+
+    const scheduleTask = () => {
+      this._avatarHandle = null;
+      const candidateUri = buildHeadAssetUri(shortCode);
+      if (!this._isMounted || requestId !== this._avatarRequestId) {
+        return;
+      }
+      if (!candidateUri) {
+        this.setState({
+          avatarCandidateUri: null,
+          avatarCandidateRequestId: 0,
+          avatarFailedUri: null,
+          generatedAvatarUri: null,
+        });
+        return;
+      }
+      this.setState(prevState => {
+        const isSameCandidate = prevState.avatarCandidateUri === candidateUri;
+        return {
+          avatarCandidateUri: candidateUri,
+          avatarCandidateRequestId: requestId,
+          avatarFailedUri: null,
+          generatedAvatarUri: isSameCandidate ? prevState.generatedAvatarUri : null,
+        };
+      });
+    };
+
+    const handle = InteractionManager.runAfterInteractions(() => {
+      scheduleTask();
+    });
+
+    if (handle && typeof handle.cancel === 'function') {
+      this._avatarHandle = handle;
+    } else {
+      scheduleTask();
+    }
+  }
+
+  onAvatarLoadSuccess = (uri, requestId) => {
+    if (!this._isMounted || requestId !== this._avatarRequestId) {
+      return;
+    }
+    this.setState({
+      generatedAvatarUri: uri,
+      avatarFailedUri: null,
+    });
+  }
+
+  onAvatarLoadError = (uri, requestId) => {
+    if (!this._isMounted || requestId !== this._avatarRequestId) {
+      return;
+    }
+    this.setState(prevState => {
+      if (prevState.avatarFailedUri === uri && prevState.generatedAvatarUri === null) {
+        return null;
+      }
+      return {
+        generatedAvatarUri: null,
+        avatarFailedUri: uri,
+      };
+    });
+  }
+
   async componentDidMount() {
+    this._isMounted = true;
     // NFT sale info.
     let {price, desc, addr, txid} = this.props.navigation.state.params;
     this.setState({price, desc, addr, saleTx: txid});
@@ -434,6 +531,17 @@ class KeyValues extends React.Component {
     this.props.navigation.setParams({
       onBarCodeRead: this.onBarCodeRead,
     });
+
+    const params = this.props.navigation.state.params || {};
+    this.prepareGeneratedAvatar(params.shortCode);
+  }
+
+  componentDidUpdate(prevProps) {
+    const prevParams = (prevProps.navigation && prevProps.navigation.state && prevProps.navigation.state.params) || {};
+    const currentParams = this.props.navigation.state.params || {};
+    if (prevParams.shortCode !== currentParams.shortCode) {
+      this.prepareGeneratedAvatar(currentParams.shortCode);
+    }
   }
 
   onBarCodeRead = data => {
@@ -461,6 +569,11 @@ class KeyValues extends React.Component {
   };
 
   componentWillUnmount() {
+    this._isMounted = false;
+    if (this._avatarHandle && typeof this._avatarHandle.cancel === 'function') {
+      this._avatarHandle.cancel();
+    }
+    this._avatarHandle = null;
     if (this.subs) {
       this.subs.forEach(sub => sub.remove());
     }
@@ -871,6 +984,23 @@ class KeyValues extends React.Component {
       />
     );
 
+    const {
+      avatarCandidateUri,
+      avatarCandidateRequestId,
+      avatarFailedUri,
+      generatedAvatarUri,
+    } = this.state;
+
+    const fallbackInitials = getInitials(displayName);
+    const fallbackColor = stringToColor(displayName);
+    const avatarSource = generatedAvatarUri ? { uri: generatedAvatarUri } : undefined;
+    const avatarContainerStyles = [styles.avatarContainer];
+    if (!avatarSource) {
+      avatarContainerStyles.push({ backgroundColor: fallbackColor });
+    }
+    const overlayStyle = avatarSource ? styles.avatarOverlay : { backgroundColor: fallbackColor };
+    const shouldProbeAvatar = !!(avatarCandidateUri && avatarCandidateUri !== avatarFailedUri && avatarCandidateUri !== generatedAvatarUri);
+
     let listHeader = null;
     if (mergeList) {
       const isFollowing = !!otherNamespaceList.namespaces[namespaceId];
@@ -883,8 +1013,23 @@ class KeyValues extends React.Component {
       listHeader = (
         <View style={styles.container}>
           <View style={styles.keyContainer}>
-            <View style={{paddingRight: 20, alignSelf: 'center'}}>
-              <Avatar rounded size="medium" title={getInitials(displayName)} containerStyle={{backgroundColor: stringToColor(displayName)}}/>
+            <View style={styles.avatarWrapper}>
+              {shouldProbeAvatar && (
+                <Image
+                  source={{ uri: avatarCandidateUri }}
+                  style={styles.avatarProbe}
+                  onLoad={() => this.onAvatarLoadSuccess(avatarCandidateUri, avatarCandidateRequestId)}
+                  onError={() => this.onAvatarLoadError(avatarCandidateUri, avatarCandidateRequestId)}
+                />
+              )}
+              <Avatar
+                rounded
+                size="medium"
+                source={avatarSource}
+                title={!avatarSource ? fallbackInitials : undefined}
+                containerStyle={avatarContainerStyles}
+                overlayContainerStyle={overlayStyle}
+              />
             </View>
             <View style={{paddingRight: 10, flexShrink: 1}}>
               <View style={{flexDirection: 'row', marginBottom: 5}}>
@@ -1020,6 +1165,25 @@ export default KeyValuesScreen = connect(mapStateToProps)(KeyValues);
 var styles = StyleSheet.create({
   container: {
     flex:1,
+  },
+  avatarWrapper: {
+    marginRight: 20,
+    alignSelf: 'center',
+    padding: 5,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  avatarContainer: {
+    backgroundColor: 'transparent',
+  },
+  avatarOverlay: {
+    backgroundColor: 'transparent',
+  },
+  avatarProbe: {
+    width: 1,
+    height: 1,
+    position: 'absolute',
+    opacity: 0,
   },
   listStyle: {
     flex: 1,
