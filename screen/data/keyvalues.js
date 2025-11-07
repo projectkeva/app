@@ -1015,10 +1015,27 @@ class KeyValues extends React.Component {
     const fallbackColor = stringToColor(displayName);
     const avatarSource = generatedAvatarUri ? { uri: generatedAvatarUri } : undefined;
     const avatarContainerStyles = [styles.avatarContainer];
-    if (!avatarSource) {
-      avatarContainerStyles.push({ backgroundColor: fallbackColor });
+    let avatarContent;
+    if (avatarSource) {
+      avatarContent = (
+        <Image
+          source={avatarSource}
+          style={styles.generatedAvatarImage}
+        />
+      );
+    } else {
+      const fallbackBackground = { backgroundColor: fallbackColor };
+      avatarContainerStyles.push(fallbackBackground);
+      avatarContent = (
+        <Avatar
+          rounded
+          size="medium"
+          title={fallbackInitials}
+          containerStyle={avatarContainerStyles}
+          overlayContainerStyle={fallbackBackground}
+        />
+      );
     }
-    const overlayStyle = avatarSource ? styles.avatarOverlay : { backgroundColor: fallbackColor };
     const avatarCandidateUri = selectAvatarCandidateUri(avatarCandidateUris, avatarFailedUris, generatedAvatarUri);
     const shouldProbeAvatar = !!(avatarCandidateUri && avatarCandidateRequestId === this._avatarRequestId);
 
@@ -1043,14 +1060,7 @@ class KeyValues extends React.Component {
                   onError={() => this.onAvatarLoadError(avatarCandidateUri, avatarCandidateRequestId)}
                 />
               )}
-              <Avatar
-                rounded
-                size="medium"
-                source={avatarSource}
-                title={!avatarSource ? fallbackInitials : undefined}
-                containerStyle={avatarContainerStyles}
-                overlayContainerStyle={overlayStyle}
-              />
+              {avatarContent}
             </View>
             <View style={{paddingRight: 10, flexShrink: 1}}>
               <View style={{flexDirection: 'row', marginBottom: 5}}>
@@ -1197,8 +1207,11 @@ var styles = StyleSheet.create({
   avatarContainer: {
     backgroundColor: 'transparent',
   },
-  avatarOverlay: {
-    backgroundColor: 'transparent',
+  generatedAvatarImage: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    resizeMode: 'cover',
   },
   avatarProbe: {
     width: 1,
