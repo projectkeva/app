@@ -298,23 +298,27 @@ class Item extends React.Component {
     const fallbackInitials = getInitials(displayName);
     const fallbackColor = stringToColor(displayName);
     const avatarSource = generatedAvatarUri ? { uri: generatedAvatarUri } : undefined;
-    let avatarContent;
-    if (avatarSource) {
-      avatarContent = (
-        <View style={styles.feedGeneratedAvatarContainer}>
-          <Image
-            source={avatarSource}
-            style={styles.feedGeneratedAvatarImage}
-          />
-        </View>
-      );
-    } else {
-      avatarContent = (
-        <View style={[styles.feedFallbackAvatar, { backgroundColor: fallbackColor }]}>
+    const fallbackAvatarStyle = [
+      styles.feedFallbackAvatar,
+      { backgroundColor: fallbackColor },
+      avatarSource ? styles.hiddenAvatar : null,
+    ];
+
+    const avatarContent = (
+      <>
+        <View style={fallbackAvatarStyle}>
           <Text style={styles.feedFallbackAvatarLabel}>{fallbackInitials}</Text>
         </View>
-      );
-    }
+        {avatarSource && (
+          <View style={styles.feedGeneratedAvatarContainer}>
+            <Image
+              source={avatarSource}
+              style={styles.feedGeneratedAvatarImage}
+            />
+          </View>
+        )}
+      </>
+    );
 
     return (
       <View style={styles.card}>
@@ -1421,6 +1425,9 @@ var styles = StyleSheet.create({
     borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  hiddenAvatar: {
+    display: 'none',
   },
   fallbackAvatarLabel: {
     color: '#fff',

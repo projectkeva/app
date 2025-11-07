@@ -324,23 +324,27 @@ class Namespace extends React.Component {
     const avatarCandidateUri = selectAvatarCandidateUri(avatarCandidateUris, avatarFailedUris, generatedAvatarUri);
     const shouldProbeAvatar = !!(avatarCandidateUri && avatarCandidateRequestId === this._avatarRequestId);
     const avatarSource = generatedAvatarUri ? { uri: generatedAvatarUri } : undefined;
-    let avatarContent;
-    if (avatarSource) {
-      avatarContent = (
-        <View style={styles.generatedAvatarContainer}>
-          <Image
-            source={avatarSource}
-            style={styles.generatedAvatarImage}
-          />
-        </View>
-      );
-    } else {
-      avatarContent = (
-        <View style={[styles.fallbackAvatar, { backgroundColor: colorAvatar }]}>
+    const fallbackAvatarStyle = [
+      styles.fallbackAvatar,
+      { backgroundColor: colorAvatar },
+      avatarSource ? styles.hiddenAvatar : null,
+    ];
+
+    const avatarContent = (
+      <>
+        <View style={fallbackAvatarStyle}>
           <Text style={styles.fallbackAvatarLabel}>{titleAvatar}</Text>
         </View>
-      );
-    }
+        {avatarSource && (
+          <View style={styles.generatedAvatarContainer}>
+            <Image
+              source={avatarSource}
+              style={styles.generatedAvatarImage}
+            />
+          </View>
+        )}
+      </>
+    );
 
     return (
       <Animated.View style={this._style}>
@@ -1351,6 +1355,9 @@ var styles = StyleSheet.create({
     borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  hiddenAvatar: {
+    display: 'none',
   },
   fallbackAvatarLabel: {
     color: '#fff',
