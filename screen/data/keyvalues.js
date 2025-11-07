@@ -301,10 +301,12 @@ class Item extends React.Component {
     let avatarContent;
     if (avatarSource) {
       avatarContent = (
-        <Image
-          source={avatarSource}
-          style={styles.feedGeneratedAvatarImage}
-        />
+        <View style={styles.feedGeneratedAvatarContainer}>
+          <Image
+            source={avatarSource}
+            style={styles.feedGeneratedAvatarImage}
+          />
+        </View>
       );
     } else {
       avatarContent = (
@@ -1187,10 +1189,12 @@ class KeyValues extends React.Component {
     let avatarContent;
     if (avatarSource) {
       avatarContent = (
-        <Image
-          source={avatarSource}
-          style={styles.generatedAvatarImage}
-        />
+        <View style={styles.generatedAvatarContainer}>
+          <Image
+            source={avatarSource}
+            style={styles.generatedAvatarImage}
+          />
+        </View>
       );
     } else {
       avatarContent = (
@@ -1380,11 +1384,29 @@ var styles = StyleSheet.create({
     borderRadius: 20,
     resizeMode: 'cover',
   },
+  generatedAvatarContainer: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#fff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
   feedGeneratedAvatarImage: {
     width: 36,
     height: 36,
     borderRadius: 18,
     resizeMode: 'cover',
+  },
+  feedGeneratedAvatarContainer: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#fff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
   },
   fallbackAvatar: {
     width: 40,
