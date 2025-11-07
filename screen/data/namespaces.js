@@ -325,10 +325,27 @@ class Namespace extends React.Component {
     const shouldProbeAvatar = !!(avatarCandidateUri && avatarCandidateRequestId === this._avatarRequestId);
     const avatarSource = generatedAvatarUri ? { uri: generatedAvatarUri } : undefined;
     const avatarContainerStyles = [styles.avatarContainer];
-    if (!avatarSource) {
-      avatarContainerStyles.push({ backgroundColor: colorAvatar });
+    let avatarContent;
+    if (avatarSource) {
+      avatarContent = (
+        <Image
+          source={avatarSource}
+          style={styles.generatedAvatarImage}
+        />
+      );
+    } else {
+      const fallbackBackground = { backgroundColor: colorAvatar };
+      avatarContainerStyles.push(fallbackBackground);
+      avatarContent = (
+        <Avatar
+          rounded
+          size="medium"
+          title={titleAvatar}
+          containerStyle={avatarContainerStyles}
+          overlayContainerStyle={fallbackBackground}
+        />
+      );
     }
-    const overlayStyle = avatarSource ? styles.avatarOverlay : { backgroundColor: colorAvatar };
 
     return (
       <Animated.View style={this._style}>
@@ -342,14 +359,7 @@ class Namespace extends React.Component {
                 onError={() => this.onAvatarLoadError(avatarCandidateUri, avatarCandidateRequestId)}
               />
             )}
-            <Avatar
-              rounded
-              size="medium"
-              source={avatarSource}
-              title={!avatarSource ? titleAvatar : undefined}
-              containerStyle={avatarContainerStyles}
-              overlayContainerStyle={overlayStyle}
-            />
+            {avatarContent}
           </View>
           <View style={{ flex: 1, justifyContent: 'space-between', paddingHorizontal: 7, paddingTop: 10 }}>
             <View style={{ flex: 1 }} >
@@ -1328,8 +1338,11 @@ var styles = StyleSheet.create({
   avatarContainer: {
     backgroundColor: 'transparent',
   },
-  avatarOverlay: {
-    backgroundColor: 'transparent',
+  generatedAvatarImage: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    resizeMode: 'cover',
   },
   avatarProbe: {
     width: 1,
