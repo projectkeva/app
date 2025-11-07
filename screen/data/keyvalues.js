@@ -81,6 +81,10 @@ class Item extends React.Component {
   componentDidMount() {
     this._isMounted = true;
     this.prepareGeneratedAvatar(this.getShortCode());
+
+    InteractionManager.runAfterInteractions(() => {
+      this._componentDidMount();
+    });
   }
 
   componentDidUpdate(prevProps) {
@@ -221,12 +225,6 @@ class Item extends React.Component {
 
   stripHtml = str => {
     return str.replace(/(<([^>]+)>)/gi, "").replace(/(\r\n|\n|\r)/gm, "");
-  }
-
-  async componentDidMount() {
-    InteractionManager.runAfterInteractions(async () => {
-      await this._componentDidMount();
-    });
   }
 
   async _componentDidMount() {
