@@ -42,7 +42,6 @@ import Toast from 'react-native-root-toast';
 import StepModal from "../../common/StepModalWizard";
 import { timeConverter, getInitials, stringToColor } from "../../util";
 import Biometric from '../../class/biometrics';
-import { Avatar } from 'react-native-elements';
 import { extractMedia, getImageGatewayURL, removeMedia } from './mediaManager';
 import { buildHeadAssetUriCandidates } from '../../common/namespaceAvatar';
 
@@ -69,7 +68,142 @@ class Item extends React.Component {
 
   constructor(props) {
     super(props);
-    this.state = { loading: false, selectedImage: null, isRefreshing: false, thumbnail: null };
+    this.state = {
+      loading: false,
+      selectedImage: null,
+      isRefreshing: false,
+      thumbnail: null,
+      avatarCandidateUris: [],
+      avatarCandidateRequestId: 0,
+      avatarFailedUris: [],
+      generatedAvatarUri: null,
+    };
+    this._avatarRequestId = 0;
+    this._avatarHandle = null;
+    this._isMounted = false;
+  }
+
+  componentDidMount() {
+    this._isMounted = true;
+    this.prepareGeneratedAvatar(this.getShortCode());
+  }
+
+  componentDidUpdate(prevProps) {
+    const prevShortCode = this.getShortCode(prevProps);
+    const currentShortCode = this.getShortCode();
+    if (prevShortCode !== currentShortCode) {
+      this.prepareGeneratedAvatar(currentShortCode);
+    }
+  }
+
+  componentWillUnmount() {
+    this._isMounted = false;
+    if (this._avatarHandle && typeof this._avatarHandle.cancel === 'function') {
+      this._avatarHandle.cancel();
+    }
+    this._avatarHandle = null;
+  }
+
+  getShortCode = (props = this.props) => {
+    const { item, navigation } = props;
+    if (item && item.shortCode) {
+      return item.shortCode;
+    }
+    if (
+      navigation &&
+      navigation.state &&
+      navigation.state.params &&
+      navigation.state.params.shortCode
+    ) {
+      return navigation.state.params.shortCode;
+    }
+    return null;
+  }
+
+  prepareGeneratedAvatar = shortCode => {
+    if (this._avatarHandle && typeof this._avatarHandle.cancel === 'function') {
+      this._avatarHandle.cancel();
+    }
+
+    if (!shortCode) {
+      if (this._isMounted) {
+        this.setState({
+          avatarCandidateUris: [],
+          avatarCandidateRequestId: 0,
+          avatarFailedUris: [],
+          generatedAvatarUri: null,
+        });
+      }
+      this._avatarHandle = null;
+      return;
+    }
+
+    const requestId = ++this._avatarRequestId;
+
+    const scheduleTask = () => {
+      this._avatarHandle = null;
+      const candidateUris = buildHeadAssetUriCandidates(shortCode);
+      if (!this._isMounted || requestId !== this._avatarRequestId) {
+        return;
+      }
+      if (!candidateUris || candidateUris.length === 0) {
+        this.setState({
+          avatarCandidateUris: [],
+          avatarCandidateRequestId: 0,
+          avatarFailedUris: [],
+          generatedAvatarUri: null,
+        });
+        return;
+      }
+      this.setState(prevState => {
+        const prevCandidateUris = prevState.avatarCandidateUris || [];
+        const sameCandidates =
+          prevCandidateUris.length === candidateUris.length &&
+          prevCandidateUris.every((uri, idx) => uri === candidateUris[idx]);
+        return {
+          avatarCandidateUris: candidateUris,
+          avatarCandidateRequestId: requestId,
+          avatarFailedUris: sameCandidates ? prevState.avatarFailedUris || [] : [],
+          generatedAvatarUri: sameCandidates ? prevState.generatedAvatarUri : null,
+        };
+      });
+    };
+
+    const handle = InteractionManager.runAfterInteractions(() => {
+      scheduleTask();
+    });
+
+    if (handle && typeof handle.cancel === 'function') {
+      this._avatarHandle = handle;
+    } else {
+      scheduleTask();
+    }
+  }
+
+  onAvatarLoadSuccess = (uri, requestId) => {
+    if (!this._isMounted || requestId !== this._avatarRequestId) {
+      return;
+    }
+    this.setState({
+      generatedAvatarUri: uri,
+      avatarFailedUris: [],
+    });
+  }
+
+  onAvatarLoadError = (uri, requestId) => {
+    if (!this._isMounted || requestId !== this._avatarRequestId) {
+      return;
+    }
+    this.setState(prevState => {
+      const prevFailed = prevState.avatarFailedUris || [];
+      if (prevFailed.includes(uri) && prevState.generatedAvatarUri === null) {
+        return null;
+      }
+      return {
+        generatedAvatarUri: null,
+        avatarFailedUris: prevFailed.concat(uri),
+      };
+    });
   }
 
   onEdit = () => {
@@ -152,13 +286,49 @@ class Item extends React.Component {
 
     const canEdit = !isOther && item.type !== 'REG' && keyType != 'profile' && !isBid;
 
+    const {
+      avatarCandidateUris,
+      avatarCandidateRequestId,
+      avatarFailedUris,
+      generatedAvatarUri,
+    } = this.state;
+
+    const avatarCandidateUri = selectAvatarCandidateUri(avatarCandidateUris, avatarFailedUris, generatedAvatarUri);
+    const shouldProbeAvatar = !!(avatarCandidateUri && avatarCandidateRequestId === this._avatarRequestId);
+    const fallbackInitials = getInitials(displayName);
+    const fallbackColor = stringToColor(displayName);
+    const avatarSource = generatedAvatarUri ? { uri: generatedAvatarUri } : undefined;
+    let avatarContent;
+    if (avatarSource) {
+      avatarContent = (
+        <Image
+          source={avatarSource}
+          style={styles.feedGeneratedAvatarImage}
+        />
+      );
+    } else {
+      avatarContent = (
+        <View style={[styles.feedFallbackAvatar, { backgroundColor: fallbackColor }]}>
+          <Text style={styles.feedFallbackAvatarLabel}>{fallbackInitials}</Text>
+        </View>
+      );
+    }
+
     return (
       <View style={styles.card}>
         <TouchableOpacity onPress={() => onShow(namespaceId, displayName, item.key, item.value, item.tx_hash, item.shares, item.likes, item.height, item.favorite)}>
           <View style={{flex:1,paddingHorizontal:10,paddingTop:2}}>
             <View style={{flexDirection:'row',alignItems:'center',justifyContent:'space-between'}}>
-              <View style={{paddingRight: 10, paddingTop: 5, paddingBottom: 8}}>
-                <Avatar rounded size="small" title={getInitials(displayName)} containerStyle={{backgroundColor: stringToColor(displayName)}}/>
+              <View style={styles.feedAvatarWrapper}>
+                {shouldProbeAvatar && (
+                  <Image
+                    source={{ uri: avatarCandidateUri }}
+                    style={styles.avatarProbe}
+                    onLoad={() => this.onAvatarLoadSuccess(avatarCandidateUri, avatarCandidateRequestId)}
+                    onError={() => this.onAvatarLoadError(avatarCandidateUri, avatarCandidateRequestId)}
+                  />
+                )}
+                {avatarContent}
               </View>
               <Text style={styles.keyDesc} numberOfLines={1} ellipsizeMode="tail">{displayKey}</Text>
               <View style={{flexDirection: 'row', alignItems:'center',justifyContent:'flex-start'}}>
@@ -1197,10 +1367,23 @@ var styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  feedAvatarWrapper: {
+    paddingRight: 10,
+    paddingTop: 5,
+    paddingBottom: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   generatedAvatarImage: {
     width: 40,
     height: 40,
     borderRadius: 20,
+    resizeMode: 'cover',
+  },
+  feedGeneratedAvatarImage: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     resizeMode: 'cover',
   },
   fallbackAvatar: {
@@ -1210,9 +1393,21 @@ var styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  feedFallbackAvatar: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   fallbackAvatarLabel: {
     color: '#fff',
     fontSize: 18,
+    fontWeight: '600',
+  },
+  feedFallbackAvatarLabel: {
+    color: '#fff',
+    fontSize: 16,
     fontWeight: '600',
   },
   avatarProbe: {
