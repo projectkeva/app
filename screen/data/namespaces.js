@@ -327,10 +327,12 @@ class Namespace extends React.Component {
     let avatarContent;
     if (avatarSource) {
       avatarContent = (
-        <Image
-          source={avatarSource}
-          style={styles.generatedAvatarImage}
-        />
+        <View style={styles.generatedAvatarContainer}>
+          <Image
+            source={avatarSource}
+            style={styles.generatedAvatarImage}
+          />
+        </View>
       );
     } else {
       avatarContent = (
@@ -1333,6 +1335,15 @@ var styles = StyleSheet.create({
     height: 40,
     borderRadius: 20,
     resizeMode: 'cover',
+  },
+  generatedAvatarContainer: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#fff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
   },
   fallbackAvatar: {
     width: 40,
