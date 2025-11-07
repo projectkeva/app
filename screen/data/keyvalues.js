@@ -49,20 +49,15 @@ import { buildHeadAssetUriCandidates } from '../../common/namespaceAvatar';
 const PLAY_ICON  = <MIcon name="play-arrow" size={50} color="#fff"/>;
 
 const selectAvatarCandidateUri = (candidateUris = [], failedUris = [], generatedUri = null) => {
+  if (generatedUri) return null; 
   for (const candidate of candidateUris) {
-    if (!candidate) {
-      continue;
-    }
-    if (candidate === generatedUri) {
-      continue;
-    }
-    if (failedUris && failedUris.includes(candidate)) {
-      continue;
-    }
+    if (!candidate) continue;
+    if (failedUris && failedUris.includes(candidate)) continue;
     return candidate;
   }
   return null;
 };
+
 
 class Item extends React.Component {
 
@@ -298,27 +293,15 @@ class Item extends React.Component {
     const fallbackInitials = getInitials(displayName);
     const fallbackColor = stringToColor(displayName);
     const avatarSource = generatedAvatarUri ? { uri: generatedAvatarUri } : undefined;
-    const fallbackAvatarStyle = [
-      styles.feedFallbackAvatar,
-      { backgroundColor: fallbackColor },
-      avatarSource ? styles.hiddenAvatar : null,
-    ];
-
-    const avatarContent = (
-      <>
-        <View style={fallbackAvatarStyle}>
-          <Text style={styles.feedFallbackAvatarLabel}>{fallbackInitials}</Text>
-        </View>
-        {avatarSource && (
-          <View style={styles.feedGeneratedAvatarContainer}>
-            <Image
-              source={avatarSource}
-              style={styles.feedGeneratedAvatarImage}
-            />
-          </View>
-        )}
-      </>
-    );
+const avatarContent = avatarSource ? (
+  <View style={styles.feedGeneratedAvatarContainer}>
+    <Image source={avatarSource} style={styles.feedGeneratedAvatarImage} />
+  </View>
+) : (
+  <View style={[styles.feedFallbackAvatar, { backgroundColor: fallbackColor }]}>
+    <Text style={styles.feedFallbackAvatarLabel}>{fallbackInitials}</Text>
+  </View>
+);
 
     return (
       <View style={styles.card}>

@@ -72,20 +72,15 @@ let _g_cleanLockedFund;
 let _g_checkLockedFund;
 
 const selectAvatarCandidateUri = (candidateUris = [], failedUris = [], generatedUri = null) => {
+  if (generatedUri) return null; 
   for (const candidate of candidateUris) {
-    if (!candidate) {
-      continue;
-    }
-    if (candidate === generatedUri) {
-      continue;
-    }
-    if (failedUris && failedUris.includes(candidate)) {
-      continue;
-    }
+    if (!candidate) continue;
+    if (failedUris && failedUris.includes(candidate)) continue;
     return candidate;
   }
   return null;
 };
+
 
 class Namespace extends React.Component {
 
@@ -323,28 +318,18 @@ class Namespace extends React.Component {
 
     const avatarCandidateUri = selectAvatarCandidateUri(avatarCandidateUris, avatarFailedUris, generatedAvatarUri);
     const shouldProbeAvatar = !!(avatarCandidateUri && avatarCandidateRequestId === this._avatarRequestId);
-    const avatarSource = generatedAvatarUri ? { uri: generatedAvatarUri } : undefined;
-    const fallbackAvatarStyle = [
-      styles.fallbackAvatar,
-      { backgroundColor: colorAvatar },
-      avatarSource ? styles.hiddenAvatar : null,
-    ];
+const avatarSource = generatedAvatarUri ? { uri: generatedAvatarUri } : undefined;
 
-    const avatarContent = (
-      <>
-        <View style={fallbackAvatarStyle}>
-          <Text style={styles.fallbackAvatarLabel}>{titleAvatar}</Text>
-        </View>
-        {avatarSource && (
-          <View style={styles.generatedAvatarContainer}>
-            <Image
-              source={avatarSource}
-              style={styles.generatedAvatarImage}
-            />
-          </View>
-        )}
-      </>
-    );
+const avatarContent = avatarSource ? (
+  <View style={styles.generatedAvatarContainer}>
+    <Image source={avatarSource} style={styles.generatedAvatarImage} />
+  </View>
+) : (
+  <View style={[styles.fallbackAvatar, { backgroundColor: colorAvatar }]}>
+    <Text style={styles.fallbackAvatarLabel}>{titleAvatar}</Text>
+  </View>
+);
+
 
     return (
       <Animated.View style={this._style}>
