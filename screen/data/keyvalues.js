@@ -1014,7 +1014,6 @@ class KeyValues extends React.Component {
     const fallbackInitials = getInitials(displayName);
     const fallbackColor = stringToColor(displayName);
     const avatarSource = generatedAvatarUri ? { uri: generatedAvatarUri } : undefined;
-    const avatarContainerStyles = [styles.avatarContainer];
     let avatarContent;
     if (avatarSource) {
       avatarContent = (
@@ -1024,16 +1023,10 @@ class KeyValues extends React.Component {
         />
       );
     } else {
-      const fallbackBackground = { backgroundColor: fallbackColor };
-      avatarContainerStyles.push(fallbackBackground);
       avatarContent = (
-        <Avatar
-          rounded
-          size="medium"
-          title={fallbackInitials}
-          containerStyle={avatarContainerStyles}
-          overlayContainerStyle={fallbackBackground}
-        />
+        <View style={[styles.fallbackAvatar, { backgroundColor: fallbackColor }]}>
+          <Text style={styles.fallbackAvatarLabel}>{fallbackInitials}</Text>
+        </View>
       );
     }
     const avatarCandidateUri = selectAvatarCandidateUri(avatarCandidateUris, avatarFailedUris, generatedAvatarUri);
@@ -1204,14 +1197,23 @@ var styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  avatarContainer: {
-    backgroundColor: 'transparent',
-  },
   generatedAvatarImage: {
     width: 40,
     height: 40,
     borderRadius: 20,
     resizeMode: 'cover',
+  },
+  fallbackAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  fallbackAvatarLabel: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: '600',
   },
   avatarProbe: {
     width: 1,

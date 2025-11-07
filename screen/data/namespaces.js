@@ -42,7 +42,7 @@ import {
 import { HDSegwitP2SHWallet,  } from '../../class';
 import { FALLBACK_DATA_PER_BYTE_FEE } from '../../models/networkTransactionFees';
 import Biometric from '../../class/biometrics';
-import { Avatar, Button } from 'react-native-elements';
+import { Button } from 'react-native-elements';
 import { buildHeadAssetUriCandidates } from '../../common/namespaceAvatar';
 
 let BlueApp = require('../../BlueApp');
@@ -324,7 +324,6 @@ class Namespace extends React.Component {
     const avatarCandidateUri = selectAvatarCandidateUri(avatarCandidateUris, avatarFailedUris, generatedAvatarUri);
     const shouldProbeAvatar = !!(avatarCandidateUri && avatarCandidateRequestId === this._avatarRequestId);
     const avatarSource = generatedAvatarUri ? { uri: generatedAvatarUri } : undefined;
-    const avatarContainerStyles = [styles.avatarContainer];
     let avatarContent;
     if (avatarSource) {
       avatarContent = (
@@ -334,16 +333,10 @@ class Namespace extends React.Component {
         />
       );
     } else {
-      const fallbackBackground = { backgroundColor: colorAvatar };
-      avatarContainerStyles.push(fallbackBackground);
       avatarContent = (
-        <Avatar
-          rounded
-          size="medium"
-          title={titleAvatar}
-          containerStyle={avatarContainerStyles}
-          overlayContainerStyle={fallbackBackground}
-        />
+        <View style={[styles.fallbackAvatar, { backgroundColor: colorAvatar }]}>
+          <Text style={styles.fallbackAvatarLabel}>{titleAvatar}</Text>
+        </View>
       );
     }
 
@@ -1335,14 +1328,23 @@ var styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  avatarContainer: {
-    backgroundColor: 'transparent',
-  },
   generatedAvatarImage: {
     width: 40,
     height: 40,
     borderRadius: 20,
     resizeMode: 'cover',
+  },
+  fallbackAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  fallbackAvatarLabel: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: '600',
   },
   avatarProbe: {
     width: 1,
