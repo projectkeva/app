@@ -33,11 +33,18 @@ export default class App extends React.Component {
     };
   }
 
-  componentDidMount() {
+  async componentDidMount() {
     Linking.addEventListener('url', this.handleOpenURL);
     AppState.addEventListener('change', this._handleAppStateChange);
     QuickActions.popInitialAction().then(this.popInitialAction);
     DeviceEventEmitter.addListener('quickActionShortcut', this.walletQuickActions);
+
+    try {
+      await BlueApp.startAndDecrypt();
+    } catch (error) {
+      console.warn('Failed to load wallets from disk', error);
+    }
+
     this._handleAppStateChange(undefined);
   }
 
