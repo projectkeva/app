@@ -99,6 +99,13 @@ it('can work with malformed mnemonic', () => {
   assert.ok(hd.validateMnemonic());
 });
 
+it('can validate non-english mnemonic phrases', () => {
+  const mnemonic = '此 口 葱 旨 怀 段 之 反 重 险 状 尸';
+  const hd = new HDSegwitP2SHWallet();
+  hd.setSecret(mnemonic);
+  assert.ok(hd.validateMnemonic());
+});
+
 it('Legacy HD (BIP44) can generate addressess based on xpub', async function() {
   let xpub = 'xpub6CQdfC3v9gU86eaSn7AhUFcBVxiGhdtYxdC5Cw2vLmFkfth2KXCMmYcPpvZviA89X6DXDs4PJDk5QVL2G2xaVjv7SM4roWHr1gR4xB3Z7Ps';
   let hd = new HDLegacyP2PKHWallet();
