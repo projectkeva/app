@@ -1,6 +1,7 @@
 /* global it */
 import { SegwitP2SHWallet, AppStorage } from '../../class';
 import AsyncStorage from '@react-native-community/async-storage';
+import RNSecureKeyStore from 'react-native-secure-key-store';
 let assert = require('assert');
 
 it('Appstorage - loadFromDisk works', async () => {
@@ -28,6 +29,27 @@ it('Appstorage - loadFromDisk works', async () => {
   let Storage3 = new AppStorage();
   isEncrypted = await Storage3.storageIsEncrypted();
   assert.ok(isEncrypted);
+});
+
+it('Appstorage - ignores literal undefined from secure store', async () => {
+  /** @type {AppStorage} */
+  let Storage = new AppStorage();
+  let w = new SegwitP2SHWallet();
+  w.setLabel('fallbackwallet');
+  await w.generate();
+  Storage.wallets.push(w);
+  await Storage.saveToDisk();
+
+  const persisted = await AsyncStorage.getItem('data');
+  expect(persisted).toBeTruthy();
+
+  RNSecureKeyStore.get.mockResolvedValueOnce('undefined');
+
+  let Storage2 = new AppStorage();
+  const loadResult = await Storage2.loadFromDisk();
+  expect(loadResult).toBe(true);
+  expect(Storage2.wallets).toHaveLength(1);
+  expect(Storage2.wallets[0].getLabel()).toBe('fallbackwallet');
 });
 
 it('Appstorage - encryptStorage & load encrypted storage works', async () => {

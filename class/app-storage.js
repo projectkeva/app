@@ -108,7 +108,7 @@ export class AppStorage {
   async getItem(key) {
     try {
       const value = await RNSecureKeyStore.get(key);
-      if (value !== null && value !== undefined) {
+      if (value !== null && value !== undefined && value !== 'undefined' && value !== 'null') {
         return value;
       }
     } catch (error) {
@@ -116,7 +116,14 @@ export class AppStorage {
     }
 
     try {
-      return await AsyncStorage.getItem(key);
+      const fallbackValue = await AsyncStorage.getItem(key);
+      // Some storage backends return the string literal "undefined"/"null" when a value is missing.
+      // Normalize those to real null so downstream JSON.parse calls don't blow up and we can retry
+      // with another persistence layer on the next launch.
+      if (fallbackValue === 'undefined' || fallbackValue === 'null') {
+        return null;
+      }
+      return fallbackValue;
     } catch (storageError) {
       console.warn('AsyncStorage.getItem failed for key', key, storageError.message);
       return null;
