@@ -7,8 +7,16 @@ jest.mock('react-native-watch-connectivity', () => {
 })
 
 jest.mock('react-native-secure-key-store', () => {
+  const secureStore = new Map();
   return {
     setResetOnAppUninstallTo: jest.fn(),
+    set: jest.fn((key, value) => {
+      secureStore.set(key, value);
+      return Promise.resolve();
+    }),
+    get: jest.fn(key => {
+      return Promise.resolve(secureStore.has(key) ? secureStore.get(key) : undefined);
+    }),
   }
 })
 
