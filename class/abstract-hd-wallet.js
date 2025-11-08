@@ -49,7 +49,8 @@ export class AbstractHDWallet extends LegacyWallet {
     this.secret = this.secret
       .replace(/[\u3000\uFF0C\uFF1B\uFF1A\uFF1F\uFF01\u3001\uFF0E\uFF65]/g, ' ')
       .replace(/[^a-z0-9\u00c0-\u036f\u0400-\u04ff\u3040-\u30ff\u3400-\u9fff\uac00-\ud7a3]+/gi, ' ')
-      .replace(/\s+/g, ' ');
+      .replace(/\s+/g, ' ')
+      .trim();
     return this;
   }
 
