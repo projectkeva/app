@@ -108,8 +108,18 @@ export class AppStorage {
   async getItem(key) {
     try {
       const value = await RNSecureKeyStore.get(key);
-      if (value !== null && value !== undefined && value !== 'undefined' && value !== 'null') {
-        return value;
+      if (value !== null && value !== undefined) {
+        if (typeof value === 'string') {
+          const trimmed = value.trim();
+          if (trimmed.length === 0 || trimmed === 'undefined' || trimmed === 'null') {
+            // Some Android keystores return empty strings for missing values. Treat those as misses
+            // so we can fall back to AsyncStorage where the actual payload lives.
+          } else {
+            return value;
+          }
+        } else {
+          return value;
+        }
       }
     } catch (error) {
       console.warn('RNSecureKeyStore.get failed for key', key, error.message);
