@@ -79,8 +79,13 @@ export class AppStorage {
    * @param value
    * @returns {Promise<any>|Promise<any> | Promise<void> | * | Promise | void}
    */
-  setItem(key, value) {
-    return RNSecureKeyStore.set(key, value, { accessible: ACCESSIBLE.WHEN_UNLOCKED });
+  async setItem(key, value) {
+    try {
+      return await RNSecureKeyStore.set(key, value, { accessible: ACCESSIBLE.WHEN_UNLOCKED });
+    } catch (error) {
+      console.warn('RNSecureKeyStore.set failed for key', key, error.message);
+      return AsyncStorage.setItem(key, value);
+    }
   }
 
   /**
@@ -90,8 +95,13 @@ export class AppStorage {
    * @param key
    * @returns {Promise<any>|*}
    */
-  getItem(key) {
-    return RNSecureKeyStore.get(key);
+  async getItem(key) {
+    try {
+      return await RNSecureKeyStore.get(key);
+    } catch (error) {
+      console.warn('RNSecureKeyStore.get failed for key', key, error.message);
+      return AsyncStorage.getItem(key);
+    }
   }
 
     /**
