@@ -110,7 +110,35 @@ export default class WalletImport {
 
     try {
       // Make sure there is network connection.
-      await BlueElectrum.ping();
+      let hasNetwork = true;
+      try {
+        await BlueElectrum.ping();
+      } catch (error) {
+        console.warn('WalletImport: ping failed', error.message);
+        hasNetwork = false;
+      }
+
+      const safelyFetchBalance = async wallet => {
+        if (!hasNetwork || !wallet || typeof wallet.fetchBalance !== 'function') {
+          return;
+        }
+        try {
+          await wallet.fetchBalance();
+        } catch (err) {
+          console.warn('WalletImport: fetchBalance failed for', wallet && wallet.type, err.message);
+        }
+      };
+
+      const safelyFetchTransactions = async wallet => {
+        if (!hasNetwork || !wallet || typeof wallet.fetchTransactions !== 'function') {
+          return;
+        }
+        try {
+          await wallet.fetchTransactions();
+        } catch (err) {
+          console.warn('WalletImport: fetchTransactions failed for', wallet && wallet.type, err.message);
+        }
+      };
 
       if (importText.startsWith('6P')) {
         let password = false;
@@ -152,7 +180,7 @@ export default class WalletImport {
       let hd4 = new HDSegwitBech32Wallet();
       hd4.setSecret(importText);
       if (hd4.validateMnemonic()) {
-        await hd4.fetchBalance();
+        await safelyFetchBalance(hd4);
         if (hd4.getBalance() > 0) {
           // await hd4.fetchTransactions(); // experiment: dont fetch tx now. it will import faster. user can refresh his wallet later
           return WalletImport._saveWallet(hd4);
@@ -170,20 +198,20 @@ export default class WalletImport {
         let segwitBech32Wallet = new SegwitBech32Wallet();
         segwitBech32Wallet.setSecret(importText);
 
-        await legacyWallet.fetchBalance();
-        await segwitBech32Wallet.fetchBalance();
+        await safelyFetchBalance(legacyWallet);
+        await safelyFetchBalance(segwitBech32Wallet);
         if (legacyWallet.getBalance() > 0) {
           // yep, its legacy we're importing
-          await legacyWallet.fetchTransactions();
+          await safelyFetchTransactions(legacyWallet);
           return WalletImport._saveWallet(legacyWallet);
         } else if (segwitBech32Wallet.getBalance() > 0) {
           // yep, its single-address bech32 wallet
-          await segwitBech32Wallet.fetchTransactions();
+          await safelyFetchTransactions(segwitBech32Wallet);
           return WalletImport._saveWallet(segwitBech32Wallet);
         } else {
           // by default, we import wif as Segwit P2SH
-          await segwitWallet.fetchBalance();
-          await segwitWallet.fetchTransactions();
+          await safelyFetchBalance(segwitWallet);
+          await safelyFetchTransactions(segwitWallet);
           return WalletImport._saveWallet(segwitWallet);
         }
       }
@@ -193,8 +221,8 @@ export default class WalletImport {
       let legacyWallet = new LegacyWallet();
       legacyWallet.setSecret(importText);
       if (legacyWallet.getAddress()) {
-        await legacyWallet.fetchBalance();
-        await legacyWallet.fetchTransactions();
+        await safelyFetchBalance(legacyWallet);
+        await safelyFetchTransactions(legacyWallet);
         return WalletImport._saveWallet(legacyWallet);
       }
 
@@ -203,7 +231,7 @@ export default class WalletImport {
       let hd1 = new HDLegacyBreadwalletWallet();
       hd1.setSecret(importText);
       if (hd1.validateMnemonic()) {
-        await hd1.fetchBalance();
+        await safelyFetchBalance(hd1);
         if (hd1.getBalance() > 0) {
           // await hd1.fetchTransactions(); // experiment: dont fetch tx now. it will import faster. user can refresh his wallet later
           return WalletImport._saveWallet(hd1);
@@ -231,7 +259,7 @@ export default class WalletImport {
       let hd2 = new HDSegwitP2SHWallet();
       hd2.setSecret(importText);
       if (hd2.validateMnemonic()) {
-        await hd2.fetchBalance();
+        await safelyFetchBalance(hd2);
         if (hd2.getBalance() > 0) {
           // await hd2.fetchTransactions(); // experiment: dont fetch tx now. it will import faster. user can refresh his wallet later
           return WalletImport._saveWallet(hd2);
@@ -241,7 +269,7 @@ export default class WalletImport {
       let hd3 = new HDLegacyP2PKHWallet();
       hd3.setSecret(importText);
       if (hd3.validateMnemonic()) {
-        await hd3.fetchBalance();
+        await safelyFetchBalance(hd3);
         if (hd3.getBalance() > 0) {
           // await hd3.fetchTransactions(); // experiment: dont fetch tx now. it will import faster. user can refresh his wallet later
           return WalletImport._saveWallet(hd3);
@@ -251,25 +279,25 @@ export default class WalletImport {
       // no balances? how about transactions count?
 
       if (hd1.validateMnemonic()) {
-        await hd1.fetchTransactions();
+        await safelyFetchTransactions(hd1);
         if (hd1.getTransactions().length !== 0) {
           return WalletImport._saveWallet(hd1);
         }
       }
       if (hd2.validateMnemonic()) {
-        await hd2.fetchTransactions();
+        await safelyFetchTransactions(hd2);
         if (hd2.getTransactions().length !== 0) {
           return WalletImport._saveWallet(hd2);
         }
       }
       if (hd3.validateMnemonic()) {
-        await hd3.fetchTransactions();
+        await safelyFetchTransactions(hd3);
         if (hd3.getTransactions().length !== 0) {
           return WalletImport._saveWallet(hd3);
         }
       }
       if (hd4.validateMnemonic()) {
-        await hd4.fetchTransactions();
+        await safelyFetchTransactions(hd4);
         if (hd4.getTransactions().length !== 0) {
           return WalletImport._saveWallet(hd4);
         }
@@ -288,7 +316,7 @@ export default class WalletImport {
       watchOnly.setSecret(importText);
       if (watchOnly.valid()) {
         // await watchOnly.fetchTransactions(); // experiment: dont fetch tx now. it will import faster. user can refresh his wallet later
-        await watchOnly.fetchBalance();
+        await safelyFetchBalance(watchOnly);
         return WalletImport._saveWallet(watchOnly, additionalProperties);
       }
 
