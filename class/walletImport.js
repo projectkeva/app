@@ -64,9 +64,10 @@ export default class WalletImport {
   }
 
   static removePlaceholderWallet() {
-    const placeholderWalletIndex = BlueApp.wallets.findIndex(wallet => wallet.type === PlaceholderWallet.type);
-    if (placeholderWalletIndex > -1) {
-      BlueApp.wallets.splice(placeholderWalletIndex, 1);
+    for (let index = BlueApp.wallets.length - 1; index >= 0; index--) {
+      if (BlueApp.wallets[index].type === PlaceholderWallet.type) {
+        BlueApp.wallets.splice(index, 1);
+      }
     }
   }
 
@@ -80,7 +81,7 @@ export default class WalletImport {
   }
 
   static isCurrentlyImportingWallet() {
-    return BlueApp.getWallets().some(wallet => wallet.type === PlaceholderWallet.type);
+    return BlueApp.getWallets().some(wallet => wallet.type === PlaceholderWallet.type && !wallet.getIsFailure());
   }
 
   /**
@@ -93,6 +94,7 @@ export default class WalletImport {
     if (WalletImport.isCurrentlyImportingWallet()) {
       return;
     }
+    WalletImport.removePlaceholderWallet();
     const placeholderWallet = WalletImport.addPlaceholderWallet(importText);
     // Plan:
     // -2. check if BIP38 encrypted
