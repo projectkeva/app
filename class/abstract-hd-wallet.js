@@ -46,7 +46,10 @@ export class AbstractHDWallet extends LegacyWallet {
 
   setSecret(newSecret) {
     this.secret = newSecret.trim().toLowerCase();
-    this.secret = this.secret.replace(/[^a-zA-Z0-9]/g, ' ').replace(/\s+/g, ' ');
+    this.secret = this.secret
+      .replace(/[\u3000\uFF0C\uFF1B\uFF1A\uFF1F\uFF01\u3001\uFF0E\uFF65]/g, ' ')
+      .replace(/[^a-z0-9\u00c0-\u036f\u0400-\u04ff\u3040-\u30ff\u3400-\u9fff\uac00-\ud7a3]+/gi, ' ')
+      .replace(/\s+/g, ' ');
     return this;
   }
 
@@ -54,7 +57,25 @@ export class AbstractHDWallet extends LegacyWallet {
    * @return {Boolean} is mnemonic in `this.secret` valid
    */
   validateMnemonic() {
-    return bip39.validateMnemonic(this.secret);
+    if (!this.secret) {
+      return false;
+    }
+
+    if (bip39.validateMnemonic(this.secret)) {
+      return true;
+    }
+
+    const uniqueWordlists = new Set(Object.values(bip39.wordlists || {}));
+    for (const wordlist of uniqueWordlists) {
+      if (!wordlist) {
+        continue;
+      }
+      if (bip39.validateMnemonic(this.secret, wordlist)) {
+        return true;
+      }
+    }
+
+    return false;
   }
 
   getMnemonicToSeedHex() {
