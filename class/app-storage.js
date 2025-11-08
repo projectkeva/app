@@ -80,11 +80,21 @@ export class AppStorage {
    * @returns {Promise<any>|Promise<any> | Promise<void> | * | Promise | void}
    */
   async setItem(key, value) {
+    let secureStoreFailed = false;
     try {
-      return await RNSecureKeyStore.set(key, value, { accessible: ACCESSIBLE.WHEN_UNLOCKED });
+      await RNSecureKeyStore.set(key, value, { accessible: ACCESSIBLE.WHEN_UNLOCKED });
     } catch (error) {
+      secureStoreFailed = true;
       console.warn('RNSecureKeyStore.set failed for key', key, error.message);
-      return AsyncStorage.setItem(key, value);
+    }
+
+    try {
+      await AsyncStorage.setItem(key, value);
+    } catch (storageError) {
+      console.warn('AsyncStorage.setItem failed for key', key, storageError.message);
+      if (secureStoreFailed) {
+        throw storageError;
+      }
     }
   }
 
@@ -97,10 +107,19 @@ export class AppStorage {
    */
   async getItem(key) {
     try {
-      return await RNSecureKeyStore.get(key);
+      const value = await RNSecureKeyStore.get(key);
+      if (value !== null && value !== undefined) {
+        return value;
+      }
     } catch (error) {
       console.warn('RNSecureKeyStore.get failed for key', key, error.message);
-      return AsyncStorage.getItem(key);
+    }
+
+    try {
+      return await AsyncStorage.getItem(key);
+    } catch (storageError) {
+      console.warn('AsyncStorage.getItem failed for key', key, storageError.message);
+      return null;
     }
   }
 
