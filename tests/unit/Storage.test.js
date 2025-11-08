@@ -52,6 +52,27 @@ it('Appstorage - ignores literal undefined from secure store', async () => {
   expect(Storage2.wallets[0].getLabel()).toBe('fallbackwallet');
 });
 
+it('Appstorage - falls back when secure store returns empty string', async () => {
+  /** @type {AppStorage} */
+  let Storage = new AppStorage();
+  let w = new SegwitP2SHWallet();
+  w.setLabel('emptystorewallet');
+  await w.generate();
+  Storage.wallets.push(w);
+  await Storage.saveToDisk();
+
+  const persisted = await AsyncStorage.getItem('data');
+  expect(persisted).toBeTruthy();
+
+  RNSecureKeyStore.get.mockResolvedValueOnce('   ');
+
+  let Storage2 = new AppStorage();
+  const loadResult = await Storage2.loadFromDisk();
+  expect(loadResult).toBe(true);
+  expect(Storage2.wallets).toHaveLength(1);
+  expect(Storage2.wallets[0].getLabel()).toBe('emptystorewallet');
+});
+
 it('Appstorage - encryptStorage & load encrypted storage works', async () => {
   /** @type {AppStorage} */
   let Storage = new AppStorage();
