@@ -64,10 +64,9 @@ export default class WalletImport {
   }
 
   static removePlaceholderWallet() {
-    for (let index = BlueApp.wallets.length - 1; index >= 0; index--) {
-      if (BlueApp.wallets[index].type === PlaceholderWallet.type) {
-        BlueApp.wallets.splice(index, 1);
-      }
+    const placeholderWalletIndex = BlueApp.wallets.findIndex(wallet => wallet.type === PlaceholderWallet.type);
+    if (placeholderWalletIndex > -1) {
+      BlueApp.wallets.splice(placeholderWalletIndex, 1);
     }
   }
 
@@ -81,7 +80,7 @@ export default class WalletImport {
   }
 
   static isCurrentlyImportingWallet() {
-    return BlueApp.getWallets().some(wallet => wallet.type === PlaceholderWallet.type && !wallet.getIsFailure());
+    return BlueApp.getWallets().some(wallet => wallet.type === PlaceholderWallet.type);
   }
 
   /**
@@ -89,19 +88,18 @@ export default class WalletImport {
    * @param importText
    * @param additionalProperties key-values passed from outside. Used only to set up `masterFingerprint` property for watch-only wallet
    * @returns {Promise<void>}
-  */
+   */
   static async processImportText(importText, additionalProperties) {
     if (typeof BlueApp.waitForStart === 'function') {
       try {
         await BlueApp.waitForStart();
-      } catch (err) {
-        console.warn('WalletImport: waitForStart failed', err.message);
+      } catch (error) {
+        console.warn('WalletImport: waitForStart failed', error.message);
       }
     }
     if (WalletImport.isCurrentlyImportingWallet()) {
       return;
     }
-    WalletImport.removePlaceholderWallet();
     const placeholderWallet = WalletImport.addPlaceholderWallet(importText);
     // Plan:
     // -2. check if BIP38 encrypted
@@ -119,35 +117,7 @@ export default class WalletImport {
 
     try {
       // Make sure there is network connection.
-      let hasNetwork = true;
-      try {
-        await BlueElectrum.ping();
-      } catch (error) {
-        console.warn('WalletImport: ping failed', error.message);
-        hasNetwork = false;
-      }
-
-      const safelyFetchBalance = async wallet => {
-        if (!hasNetwork || !wallet || typeof wallet.fetchBalance !== 'function') {
-          return;
-        }
-        try {
-          await wallet.fetchBalance();
-        } catch (err) {
-          console.warn('WalletImport: fetchBalance failed for', wallet && wallet.type, err.message);
-        }
-      };
-
-      const safelyFetchTransactions = async wallet => {
-        if (!hasNetwork || !wallet || typeof wallet.fetchTransactions !== 'function') {
-          return;
-        }
-        try {
-          await wallet.fetchTransactions();
-        } catch (err) {
-          console.warn('WalletImport: fetchTransactions failed for', wallet && wallet.type, err.message);
-        }
-      };
+      await BlueElectrum.ping();
 
       if (importText.startsWith('6P')) {
         let password = false;
@@ -189,7 +159,7 @@ export default class WalletImport {
       let hd4 = new HDSegwitBech32Wallet();
       hd4.setSecret(importText);
       if (hd4.validateMnemonic()) {
-        await safelyFetchBalance(hd4);
+        await hd4.fetchBalance();
         if (hd4.getBalance() > 0) {
           // await hd4.fetchTransactions(); // experiment: dont fetch tx now. it will import faster. user can refresh his wallet later
           return WalletImport._saveWallet(hd4);
@@ -207,20 +177,20 @@ export default class WalletImport {
         let segwitBech32Wallet = new SegwitBech32Wallet();
         segwitBech32Wallet.setSecret(importText);
 
-        await safelyFetchBalance(legacyWallet);
-        await safelyFetchBalance(segwitBech32Wallet);
+        await legacyWallet.fetchBalance();
+        await segwitBech32Wallet.fetchBalance();
         if (legacyWallet.getBalance() > 0) {
           // yep, its legacy we're importing
-          await safelyFetchTransactions(legacyWallet);
+          await legacyWallet.fetchTransactions();
           return WalletImport._saveWallet(legacyWallet);
         } else if (segwitBech32Wallet.getBalance() > 0) {
           // yep, its single-address bech32 wallet
-          await safelyFetchTransactions(segwitBech32Wallet);
+          await segwitBech32Wallet.fetchTransactions();
           return WalletImport._saveWallet(segwitBech32Wallet);
         } else {
           // by default, we import wif as Segwit P2SH
-          await safelyFetchBalance(segwitWallet);
-          await safelyFetchTransactions(segwitWallet);
+          await segwitWallet.fetchBalance();
+          await segwitWallet.fetchTransactions();
           return WalletImport._saveWallet(segwitWallet);
         }
       }
@@ -230,8 +200,8 @@ export default class WalletImport {
       let legacyWallet = new LegacyWallet();
       legacyWallet.setSecret(importText);
       if (legacyWallet.getAddress()) {
-        await safelyFetchBalance(legacyWallet);
-        await safelyFetchTransactions(legacyWallet);
+        await legacyWallet.fetchBalance();
+        await legacyWallet.fetchTransactions();
         return WalletImport._saveWallet(legacyWallet);
       }
 
@@ -240,47 +210,35 @@ export default class WalletImport {
       let hd1 = new HDLegacyBreadwalletWallet();
       hd1.setSecret(importText);
       if (hd1.validateMnemonic()) {
-        await safelyFetchBalance(hd1);
+        await hd1.fetchBalance();
         if (hd1.getBalance() > 0) {
           // await hd1.fetchTransactions(); // experiment: dont fetch tx now. it will import faster. user can refresh his wallet later
           return WalletImport._saveWallet(hd1);
         }
       }
 
-      const hdElectrumSeedSegwit = new HDSegwitElectrumSeedP2WPKHWallet();
-      hdElectrumSeedSegwit.setSecret(importText);
-      if (hasNetwork) {
-        try {
-          if (await hdElectrumSeedSegwit.wasEverUsed()) {
-            // not fetching txs or balances, fuck it, yolo, life is too short
-            return WalletImport._saveWallet(hdElectrumSeedSegwit);
-          }
-        } catch (_) {}
-      }
+      try {
+        let hdElectrumSeedLegacy = new HDSegwitElectrumSeedP2WPKHWallet();
+        hdElectrumSeedLegacy.setSecret(importText);
+        if (await hdElectrumSeedLegacy.wasEverUsed()) {
+          // not fetching txs or balances, fuck it, yolo, life is too short
+          return WalletImport._saveWallet(hdElectrumSeedLegacy);
+        }
+      } catch (_) {}
 
-      const hdElectrumSeedLegacy = new HDLegacyElectrumSeedP2PKHWallet();
-      hdElectrumSeedLegacy.setSecret(importText);
-      if (hasNetwork) {
-        try {
-          if (await hdElectrumSeedLegacy.wasEverUsed()) {
-            // not fetching txs or balances, fuck it, yolo, life is too short
-            return WalletImport._saveWallet(hdElectrumSeedLegacy);
-          }
-        } catch (_) {}
-      }
-
-      if (hdElectrumSeedSegwit.validateMnemonic()) {
-        return WalletImport._saveWallet(hdElectrumSeedSegwit);
-      }
-
-      if (hdElectrumSeedLegacy.validateMnemonic()) {
-        return WalletImport._saveWallet(hdElectrumSeedLegacy);
-      }
+      try {
+        let hdElectrumSeedLegacy = new HDLegacyElectrumSeedP2PKHWallet();
+        hdElectrumSeedLegacy.setSecret(importText);
+        if (await hdElectrumSeedLegacy.wasEverUsed()) {
+          // not fetching txs or balances, fuck it, yolo, life is too short
+          return WalletImport._saveWallet(hdElectrumSeedLegacy);
+        }
+      } catch (_) {}
 
       let hd2 = new HDSegwitP2SHWallet();
       hd2.setSecret(importText);
       if (hd2.validateMnemonic()) {
-        await safelyFetchBalance(hd2);
+        await hd2.fetchBalance();
         if (hd2.getBalance() > 0) {
           // await hd2.fetchTransactions(); // experiment: dont fetch tx now. it will import faster. user can refresh his wallet later
           return WalletImport._saveWallet(hd2);
@@ -290,7 +248,7 @@ export default class WalletImport {
       let hd3 = new HDLegacyP2PKHWallet();
       hd3.setSecret(importText);
       if (hd3.validateMnemonic()) {
-        await safelyFetchBalance(hd3);
+        await hd3.fetchBalance();
         if (hd3.getBalance() > 0) {
           // await hd3.fetchTransactions(); // experiment: dont fetch tx now. it will import faster. user can refresh his wallet later
           return WalletImport._saveWallet(hd3);
@@ -300,25 +258,25 @@ export default class WalletImport {
       // no balances? how about transactions count?
 
       if (hd1.validateMnemonic()) {
-        await safelyFetchTransactions(hd1);
+        await hd1.fetchTransactions();
         if (hd1.getTransactions().length !== 0) {
           return WalletImport._saveWallet(hd1);
         }
       }
       if (hd2.validateMnemonic()) {
-        await safelyFetchTransactions(hd2);
+        await hd2.fetchTransactions();
         if (hd2.getTransactions().length !== 0) {
           return WalletImport._saveWallet(hd2);
         }
       }
       if (hd3.validateMnemonic()) {
-        await safelyFetchTransactions(hd3);
+        await hd3.fetchTransactions();
         if (hd3.getTransactions().length !== 0) {
           return WalletImport._saveWallet(hd3);
         }
       }
       if (hd4.validateMnemonic()) {
-        await safelyFetchTransactions(hd4);
+        await hd4.fetchTransactions();
         if (hd4.getTransactions().length !== 0) {
           return WalletImport._saveWallet(hd4);
         }
@@ -337,7 +295,7 @@ export default class WalletImport {
       watchOnly.setSecret(importText);
       if (watchOnly.valid()) {
         // await watchOnly.fetchTransactions(); // experiment: dont fetch tx now. it will import faster. user can refresh his wallet later
-        await safelyFetchBalance(watchOnly);
+        await watchOnly.fetchBalance();
         return WalletImport._saveWallet(watchOnly, additionalProperties);
       }
 
