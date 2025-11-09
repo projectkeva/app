@@ -6,6 +6,7 @@ let loc = require('../loc');
 const Txdecoder = require('./txdecoder');
 import Toast from 'react-native-root-toast';
 let BlueApp = require('../BlueApp');
+let BlueElectrum = require('../BlueElectrum');
 
 import {
     getKeyValueUpdateScript, getNamespaceUtxo, getNonNamespaceUxtos,
@@ -626,6 +627,72 @@ export async function createNFTBid(wallet, requestedSatPerByte, nsNFTId, payment
   return {offerTx, fee, lockedFund};
 }
 
+async function ensurePsbtInputsUnspent(psbt) {
+  let addressMap = new Map();
+
+  for (let i = 0; i < psbt.inputCount; i++) {
+    const txInput = psbt.txInputs[i];
+    const psbtInput = psbt.data.inputs[i];
+
+    if (!txInput || !psbtInput) {
+      continue;
+    }
+
+    const txid = Buffer.from(txInput.hash).reverse().toString('hex');
+    const vout = txInput.index;
+
+    let script = psbtInput.witnessUtxo && psbtInput.witnessUtxo.script;
+    if (!script && psbtInput.nonWitnessUtxo) {
+      try {
+        const nonWitnessTx = bitcoin.Transaction.fromBuffer(psbtInput.nonWitnessUtxo);
+        if (nonWitnessTx && nonWitnessTx.outs && nonWitnessTx.outs[vout]) {
+          script = nonWitnessTx.outs[vout].script;
+        }
+      } catch (e) {
+        console.log('Failed to decode non-witness utxo while validating PSBT inputs', e);
+      }
+    }
+
+    if (!script) {
+      continue;
+    }
+
+    let address;
+    try {
+      address = bitcoin.address.fromOutputScript(script);
+    } catch (e) {
+      continue;
+    }
+
+    if (!addressMap.has(address)) {
+      addressMap.set(address, []);
+    }
+    addressMap.get(address).push({ txid, vout });
+  }
+
+  if (addressMap.size === 0) {
+    return;
+  }
+
+  const addresses = Array.from(addressMap.keys());
+  const utxoByAddress = await BlueElectrum.multiGetUtxoByAddress(addresses);
+
+  let missing = [];
+  for (const [address, outpoints] of addressMap.entries()) {
+    const utxos = utxoByAddress[address] || [];
+    for (const { txid, vout } of outpoints) {
+      const found = utxos.some(utxo => utxo.txId === txid && utxo.vout === vout);
+      if (!found) {
+        missing.push(`${txid}:${vout}`);
+      }
+    }
+  }
+
+  if (missing.length > 0) {
+    throw new Error('Offer is no longer valid because buyer funds were spent.');
+  }
+}
+
 export async function acceptNFTBid(walletId, partialTransaction, namespaceId) {
   const wallets = BlueApp.getWallets();
   let wallet = wallets.find(w => w.getID() == walletId);
@@ -635,6 +702,7 @@ export async function acceptNFTBid(walletId, partialTransaction, namespaceId) {
   }
 
   let partialTx = bitcoin.Psbt.fromHex(partialTransaction);
+  await ensurePsbtInputsUnspent(partialTx);
   let nsUtxo = await getNamespaceUtxo(wallet, namespaceId);
   if (!nsUtxo) {
     throw new Error('Cannot find namespace');

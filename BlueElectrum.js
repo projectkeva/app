@@ -346,7 +346,10 @@ module.exports.multiGetUtxoByAddress = async function(addresses, batchsize) {
     let results = [];
 
     if (disableBatching) {
-      // ElectrumPersonalServer doesnt support `blockchain.scripthash.listunspent`
+      for (let sh of scripthashes) {
+        let utxos = await mainClient.blockchainScripthash_listunspent(sh);
+        results.push({ result: utxos, param: sh });
+      }
     } else {
       let toast = showStatus("Getting UTXO of addresses: " + scripthashes.length);
       results = await mainClient.blockchainScripthash_listunspentBatch(scripthashes);
