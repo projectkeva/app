@@ -630,8 +630,17 @@ export async function createNFTBid(wallet, requestedSatPerByte, nsNFTId, payment
 async function ensurePsbtInputsUnspent(psbt) {
   let addressMap = new Map();
 
+  const txInputs =
+    (psbt.__CACHE && psbt.__CACHE.__TX && psbt.__CACHE.__TX.ins) ||
+    (psbt.data &&
+      psbt.data.globalMap &&
+      psbt.data.globalMap.unsignedTx &&
+      psbt.data.globalMap.unsignedTx.tx &&
+      psbt.data.globalMap.unsignedTx.tx.ins) ||
+    [];
+
   for (let i = 0; i < psbt.inputCount; i++) {
-    const txInput = psbt.txInputs[i];
+    const txInput = txInputs[i];
     const psbtInput = psbt.data.inputs[i];
 
     if (!txInput || !psbtInput) {
