@@ -7,15 +7,14 @@ let prompt = require('./prompt');
 let EV = require('./events');
 let loc = require('./loc');
 
+let startPromise = null;
+let hasAttemptedStart = false;
+
 /** @type {AppStorage} */
 const BlueApp = new AppStorage();
 
-async function startAndDecrypt(retry) {
+async function performStart(retry) {
   console.log('startAndDecrypt');
-  if (BlueApp.getWallets().length > 0) {
-    console.log('App already has some wallets, so we are in already started state, exiting startAndDecrypt');
-    return;
-  }
   let password = false;
   if (await BlueApp.storageIsEncrypted()) {
     DeviceQuickActions.clearShortcutItems();
@@ -32,10 +31,44 @@ async function startAndDecrypt(retry) {
 
   if (!success && password) {
     // we had password and yet could not load/decrypt
-    return startAndDecrypt(true);
+    return performStart(true);
   }
 }
 
+async function startAndDecrypt(retry) {
+  if (BlueApp.getWallets().length > 0) {
+    console.log('App already has some wallets, so we are in already started state, exiting startAndDecrypt');
+    hasAttemptedStart = true;
+    return;
+  }
+
+  if (hasAttemptedStart && !retry) {
+    return;
+  }
+
+  if (!startPromise) {
+    startPromise = performStart(retry)
+      .catch(err => {
+        // surface the error to callers but keep our internal state consistent
+        throw err;
+      })
+      .finally(() => {
+        hasAttemptedStart = true;
+        startPromise = null;
+      });
+  }
+
+  return startPromise;
+}
+
+function waitForStart() {
+  if (startPromise) {
+    return startPromise;
+  }
+  return Promise.resolve();
+}
+
 BlueApp.startAndDecrypt = startAndDecrypt;
+BlueApp.waitForStart = waitForStart;
 
 module.exports = BlueApp;
