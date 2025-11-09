@@ -89,8 +89,15 @@ export default class WalletImport {
    * @param importText
    * @param additionalProperties key-values passed from outside. Used only to set up `masterFingerprint` property for watch-only wallet
    * @returns {Promise<void>}
-   */
+  */
   static async processImportText(importText, additionalProperties) {
+    if (typeof BlueApp.waitForStart === 'function') {
+      try {
+        await BlueApp.waitForStart();
+      } catch (err) {
+        console.warn('WalletImport: waitForStart failed', err.message);
+      }
+    }
     if (WalletImport.isCurrentlyImportingWallet()) {
       return;
     }
