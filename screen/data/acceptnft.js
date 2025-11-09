@@ -98,8 +98,16 @@ class AcceptNFT extends React.Component {
     const {walletId, namespaceId, offerTx} = this.props.navigation.state.params;
     this.setState({loading: true});
 
-    const signedTx = await acceptNFTBid(walletId, offerTx, namespaceId);
+    let signedTx;
+    try {
+      signedTx = await acceptNFTBid(walletId, offerTx, namespaceId);
+    } catch (err) {
+      console.warn('Failed to accept NFT bid', err);
+      this.setState({loading: false});
+      return toastError(err.message || 'Failed to sign transaction');
+    }
     if (!signedTx) {
+      this.setState({loading: false});
       return toastError('Failed to sign transaction');
     }
 
