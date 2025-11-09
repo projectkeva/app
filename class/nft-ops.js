@@ -628,7 +628,7 @@ export async function createNFTBid(wallet, requestedSatPerByte, nsNFTId, payment
 }
 
 async function ensurePsbtInputsUnspent(psbt) {
-  let addressMap = new Map();
+  let scriptMap = new Map();
 
   const txInputs =
     (psbt.__CACHE && psbt.__CACHE.__TX && psbt.__CACHE.__TX.ins) ||
@@ -666,29 +666,40 @@ async function ensurePsbtInputsUnspent(psbt) {
       continue;
     }
 
-    let address;
-    try {
-      address = bitcoin.address.fromOutputScript(script);
-    } catch (e) {
-      continue;
+    const scriptHex = script.toString('hex');
+    if (!scriptMap.has(scriptHex)) {
+      scriptMap.set(scriptHex, []);
     }
-
-    if (!addressMap.has(address)) {
-      addressMap.set(address, []);
-    }
-    addressMap.get(address).push({ txid, vout });
+    scriptMap.get(scriptHex).push({ txid, vout });
   }
 
-  if (addressMap.size === 0) {
+  if (scriptMap.size === 0) {
     return;
   }
 
-  const addresses = Array.from(addressMap.keys());
-  const utxoByAddress = await BlueElectrum.multiGetUtxoByAddress(addresses);
+  let utxoByScript = {};
+  try {
+    utxoByScript = await BlueElectrum.multiGetUtxoByScript(Array.from(scriptMap.keys()));
+  } catch (e) {
+    console.log('Failed to query utxos by script, falling back to address lookup', e);
+    const addresses = [];
+    const scriptToAddress = {};
+    for (const scriptHex of scriptMap.keys()) {
+      try {
+        const address = bitcoin.address.fromOutputScript(Buffer.from(scriptHex, 'hex'));
+        scriptToAddress[scriptHex] = address;
+        addresses.push(address);
+      } catch (err) {}
+    }
+    const utxoByAddress = await BlueElectrum.multiGetUtxoByAddress(addresses);
+    for (const [scriptHex, address] of Object.entries(scriptToAddress)) {
+      utxoByScript[scriptHex] = utxoByAddress[address] || [];
+    }
+  }
 
   let missing = [];
-  for (const [address, outpoints] of addressMap.entries()) {
-    const utxos = utxoByAddress[address] || [];
+  for (const [scriptHex, outpoints] of scriptMap.entries()) {
+    const utxos = utxoByScript[scriptHex] || [];
     for (const { txid, vout } of outpoints) {
       const found = utxos.some(utxo => utxo.txId === txid && utxo.vout === vout);
       if (!found) {
@@ -698,7 +709,8 @@ async function ensurePsbtInputsUnspent(psbt) {
   }
 
   if (missing.length > 0) {
-    throw new Error('Offer is no longer valid because buyer funds were spent.');
+    const detail = missing.slice(0, 3).join(', ');
+    throw new Error(`Offer is no longer valid because buyer funds were spent (${detail}).`);
   }
 }
 

@@ -371,6 +371,56 @@ module.exports.multiGetUtxoByAddress = async function(addresses, batchsize) {
   return ret;
 };
 
+module.exports.multiGetUtxoByScript = async function(scripts, batchsize) {
+  batchsize = batchsize || 100;
+  if (!mainClient) throw new Error('Electrum client is not connected');
+  let ret = {};
+
+  const normalized = scripts
+    .map(script => (Buffer.isBuffer(script) ? script.toString('hex') : script))
+    .filter(scriptHex => typeof scriptHex === 'string' && scriptHex.length > 0);
+  const uniqueScripts = [...new Set(normalized)];
+
+  let chunks = splitIntoChunks(uniqueScripts, batchsize);
+  for (let chunk of chunks) {
+    const scripthashMappings = {};
+    const scripthashes = chunk.map(scriptHex => {
+      const scriptBuffer = Buffer.from(scriptHex, 'hex');
+      const hash = bitcoin.crypto.sha256(scriptBuffer);
+      const reversedHash = Buffer.from(reverse(hash)).toString('hex');
+      scripthashMappings[reversedHash] = scriptHex;
+      return reversedHash;
+    });
+
+    let results = [];
+
+    if (disableBatching) {
+      for (let sh of scripthashes) {
+        let utxos = await mainClient.blockchainScripthash_listunspent(sh);
+        results.push({ result: utxos, param: sh });
+      }
+    } else {
+      let toast = showStatus("Getting UTXO of scripts: " + scripthashes.length);
+      results = await mainClient.blockchainScripthash_listunspentBatch(scripthashes);
+      hideStatus(toast);
+    }
+
+    for (let utxos of results) {
+      const scriptHex = scripthashMappings[utxos.param];
+      ret[scriptHex] = utxos.result || [];
+      for (let utxo of ret[scriptHex]) {
+        utxo.scriptHex = scriptHex;
+        utxo.txId = utxo.tx_hash;
+        utxo.vout = utxo.tx_pos;
+        delete utxo.tx_pos;
+        delete utxo.tx_hash;
+      }
+    }
+  }
+
+  return ret;
+};
+
 module.exports.multiGetHistoryByAddress = async function(addresses, batchsize) {
   batchsize = batchsize || 100;
   if (!mainClient) throw new Error('Electrum client is not connected');
