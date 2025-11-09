@@ -11,9 +11,10 @@ import { showStatus, hideStatus } from './util';
 let BlueApp = require('./BlueApp');
 
 const storageKey = 'ELECTRUM_PEERS';
-const defaultPeer = { host: 'ec.kevacoin.org', ssl: '50002' };
+const DEFAULT_PORT = 50002;
+const defaultPeer = { host: 'ec.kevacoin.org', ssl: DEFAULT_PORT };
 const hardcodedPeers = [
-  { host: 'ec.kevacoin.org', ssl: '50002' },
+  { host: 'ec.kevacoin.org', ssl: DEFAULT_PORT },
 ];
 
 let mainClient: ElectrumClient = false;
@@ -29,6 +30,34 @@ function getCurrentPeer() {
 
 let txhashHeightCache = {};
 
+function sanitizeHost(hostValue) {
+  if (typeof hostValue !== 'string') {
+    return defaultPeer.host;
+  }
+  const trimmed = hostValue.trim();
+  if (trimmed.length === 0 || trimmed === 'undefined' || trimmed === 'null') {
+    return defaultPeer.host;
+  }
+  return trimmed;
+}
+
+function parsePort(portValue) {
+  if (typeof portValue === 'number' && Number.isFinite(portValue) && portValue > 0) {
+    return portValue;
+  }
+  if (typeof portValue === 'string') {
+    const trimmed = portValue.trim();
+    if (trimmed.length === 0 || trimmed === 'undefined' || trimmed === 'null') {
+      return NaN;
+    }
+    const numeric = Number.parseInt(trimmed, 10);
+    if (Number.isFinite(numeric) && numeric > 0) {
+      return numeric;
+    }
+  }
+  return NaN;
+}
+
 async function connectMain() {
   let usingPeer = await getRandomHardcodedPeer();
   let savedPeer = await getSavedPeer();
@@ -38,8 +67,24 @@ async function connectMain() {
   currentPeer = usingPeer;
 
   try {
-    console.log('begin connection:', JSON.stringify(usingPeer));
-    mainClient = new ElectrumClient(usingPeer.ssl || usingPeer.tcp, usingPeer.host, usingPeer.ssl ? 'tls' : 'tcp');
+    const resolvedPort = parsePort(usingPeer.ssl || usingPeer.tcp);
+    const isValidPort = Number.isFinite(resolvedPort) && resolvedPort > 0;
+    if (!isValidPort) {
+      console.warn('connectMain: invalid port detected for peer, falling back to default', usingPeer);
+      usingPeer = { ...defaultPeer };
+      currentPeer = usingPeer;
+    }
+    const sanitizedHost = sanitizeHost(usingPeer.host);
+    if (sanitizedHost !== usingPeer.host) {
+      console.warn('connectMain: invalid host detected for peer, falling back to default host', usingPeer);
+      usingPeer = { ...usingPeer, host: sanitizedHost };
+      currentPeer = usingPeer;
+    }
+
+    const port = isValidPort ? resolvedPort : DEFAULT_PORT;
+
+    console.log('begin connection:', JSON.stringify({ ...usingPeer, port }));
+    mainClient = new ElectrumClient(port, sanitizedHost, usingPeer.ssl ? 'tls' : 'tcp');
     const ver = await mainClient.initElectrum({ client: 'bluewallet', version: '1.4' });
     if (ver && ver[0]) {
       console.log('connected to ', ver);
@@ -71,10 +116,14 @@ async function getRandomHardcodedPeer() {
 }
 
 async function getSavedPeer() {
-  let host = await AsyncStorage.getItem(AppStorage.ELECTRUM_HOST);
-  let port = await AsyncStorage.getItem(AppStorage.ELECTRUM_TCP_PORT);
-  let sslPort = await AsyncStorage.getItem(AppStorage.ELECTRUM_SSL_PORT);
-  return { host, tcp: port, ssl: sslPort };
+  const host = sanitizeHost(await AsyncStorage.getItem(AppStorage.ELECTRUM_HOST));
+  const tcpPort = parsePort(await AsyncStorage.getItem(AppStorage.ELECTRUM_TCP_PORT));
+  const sslPort = parsePort(await AsyncStorage.getItem(AppStorage.ELECTRUM_SSL_PORT));
+  return {
+    host,
+    tcp: Number.isFinite(tcpPort) && tcpPort > 0 ? tcpPort : undefined,
+    ssl: Number.isFinite(sslPort) && sslPort > 0 ? sslPort : undefined,
+  };
 }
 
 /**
