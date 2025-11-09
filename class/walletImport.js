@@ -240,23 +240,35 @@ export default class WalletImport {
         }
       }
 
-      try {
-        let hdElectrumSeedLegacy = new HDSegwitElectrumSeedP2WPKHWallet();
-        hdElectrumSeedLegacy.setSecret(importText);
-        if (await hdElectrumSeedLegacy.wasEverUsed()) {
-          // not fetching txs or balances, fuck it, yolo, life is too short
-          return WalletImport._saveWallet(hdElectrumSeedLegacy);
-        }
-      } catch (_) {}
+      const hdElectrumSeedSegwit = new HDSegwitElectrumSeedP2WPKHWallet();
+      hdElectrumSeedSegwit.setSecret(importText);
+      if (hasNetwork) {
+        try {
+          if (await hdElectrumSeedSegwit.wasEverUsed()) {
+            // not fetching txs or balances, fuck it, yolo, life is too short
+            return WalletImport._saveWallet(hdElectrumSeedSegwit);
+          }
+        } catch (_) {}
+      }
 
-      try {
-        let hdElectrumSeedLegacy = new HDLegacyElectrumSeedP2PKHWallet();
-        hdElectrumSeedLegacy.setSecret(importText);
-        if (await hdElectrumSeedLegacy.wasEverUsed()) {
-          // not fetching txs or balances, fuck it, yolo, life is too short
-          return WalletImport._saveWallet(hdElectrumSeedLegacy);
-        }
-      } catch (_) {}
+      const hdElectrumSeedLegacy = new HDLegacyElectrumSeedP2PKHWallet();
+      hdElectrumSeedLegacy.setSecret(importText);
+      if (hasNetwork) {
+        try {
+          if (await hdElectrumSeedLegacy.wasEverUsed()) {
+            // not fetching txs or balances, fuck it, yolo, life is too short
+            return WalletImport._saveWallet(hdElectrumSeedLegacy);
+          }
+        } catch (_) {}
+      }
+
+      if (hdElectrumSeedSegwit.validateMnemonic()) {
+        return WalletImport._saveWallet(hdElectrumSeedSegwit);
+      }
+
+      if (hdElectrumSeedLegacy.validateMnemonic()) {
+        return WalletImport._saveWallet(hdElectrumSeedLegacy);
+      }
 
       let hd2 = new HDSegwitP2SHWallet();
       hd2.setSecret(importText);
