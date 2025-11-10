@@ -5,6 +5,8 @@ import {
   TouchableOpacity,
   FlatList,
   StatusBar,
+  Image,
+  InteractionManager,
 } from 'react-native';
 const BlueElectrum = require('../../BlueElectrum');
 const StyleSheet = require('../../PlatformStyleSheet');
@@ -27,13 +29,239 @@ import {
   BlueLoading,
   BlueBigCheckmark,
 } from '../../BlueComponents';
-import { Avatar, Button, Icon, } from 'react-native-elements';
+import { Button, Icon, } from 'react-native-elements';
 import StepModal from "../../common/StepModalWizard";
 const BlueApp = require('../../BlueApp');
 const loc = require('../../loc');
 import { connect } from 'react-redux';
 
+import { buildHeadAssetUriCandidates } from '../../common/namespaceAvatar';
+
 const MAX_TIME = 3147483647;
+
+const selectAvatarCandidateUri = (candidateUris = [], failedUris = [], generatedUri = null) => {
+  if (generatedUri) return null;
+  for (const candidate of candidateUris) {
+    if (!candidate) continue;
+    if (failedUris && failedUris.includes(candidate)) continue;
+    return candidate;
+  }
+  return null;
+};
+
+const avatarStyles = StyleSheet.create({
+  avatarWrapperBase: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  avatarFallbackBase: {
+    width: '100%',
+    height: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarFallbackLabel: {
+    color: '#fff',
+    fontWeight: '700',
+  },
+  avatarGeneratedContainer: {
+    width: '100%',
+    height: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#fff',
+  },
+  avatarGeneratedImage: {
+    width: '100%',
+    height: '100%',
+  },
+  avatarProbe: {
+    position: 'absolute',
+    width: 1,
+    height: 1,
+    opacity: 0,
+  },
+});
+
+class NamespaceAvatar extends React.PureComponent {
+  constructor(props) {
+    super(props);
+    this.state = {
+      avatarCandidateUris: [],
+      avatarCandidateRequestId: 0,
+      avatarFailedUris: [],
+      generatedAvatarUri: null,
+    };
+    this._avatarRequestId = 0;
+    this._avatarHandle = null;
+    this._isMounted = false;
+  }
+
+  componentDidMount() {
+    this._isMounted = true;
+    this.prepareGeneratedAvatar(this.props.shortCode);
+  }
+
+  componentDidUpdate(prevProps) {
+    if (prevProps.shortCode !== this.props.shortCode) {
+      this.prepareGeneratedAvatar(this.props.shortCode);
+    }
+  }
+
+  componentWillUnmount() {
+    this._isMounted = false;
+    if (this._avatarHandle && typeof this._avatarHandle.cancel === 'function') {
+      this._avatarHandle.cancel();
+    }
+    this._avatarHandle = null;
+  }
+
+  prepareGeneratedAvatar = shortCode => {
+    if (this._avatarHandle && typeof this._avatarHandle.cancel === 'function') {
+      this._avatarHandle.cancel();
+    }
+
+    if (!shortCode) {
+      if (this._isMounted) {
+        this.setState({
+          avatarCandidateUris: [],
+          avatarCandidateRequestId: 0,
+          avatarFailedUris: [],
+          generatedAvatarUri: null,
+        });
+      }
+      this._avatarHandle = null;
+      return;
+    }
+
+    const requestId = ++this._avatarRequestId;
+
+    const scheduleTask = () => {
+      this._avatarHandle = null;
+      const candidateUris = buildHeadAssetUriCandidates(shortCode);
+      if (!this._isMounted || requestId !== this._avatarRequestId) {
+        return;
+      }
+      if (!candidateUris || candidateUris.length === 0) {
+        this.setState({
+          avatarCandidateUris: [],
+          avatarCandidateRequestId: 0,
+          avatarFailedUris: [],
+          generatedAvatarUri: null,
+        });
+        return;
+      }
+      this.setState(prevState => {
+        const prevCandidateUris = prevState.avatarCandidateUris || [];
+        const sameCandidates =
+          prevCandidateUris.length === candidateUris.length &&
+          prevCandidateUris.every((uri, idx) => uri === candidateUris[idx]);
+        return {
+          avatarCandidateUris: candidateUris,
+          avatarCandidateRequestId: requestId,
+          avatarFailedUris: sameCandidates ? prevState.avatarFailedUris || [] : [],
+          generatedAvatarUri: sameCandidates ? prevState.generatedAvatarUri : null,
+        };
+      });
+    };
+
+    const handle = InteractionManager.runAfterInteractions(() => {
+      scheduleTask();
+    });
+
+    if (handle && typeof handle.cancel === 'function') {
+      this._avatarHandle = handle;
+    } else {
+      scheduleTask();
+    }
+  };
+
+  onAvatarLoadSuccess = (uri, requestId) => {
+    if (!this._isMounted || requestId !== this._avatarRequestId) {
+      return;
+    }
+    this.setState({
+      generatedAvatarUri: uri,
+      avatarFailedUris: [],
+    });
+  };
+
+  onAvatarLoadError = (uri, requestId) => {
+    if (!this._isMounted || requestId !== this._avatarRequestId) {
+      return;
+    }
+    this.setState(prevState => {
+      const prevFailed = prevState.avatarFailedUris || [];
+      if (prevFailed.includes(uri) && prevState.generatedAvatarUri === null) {
+        return null;
+      }
+      return {
+        generatedAvatarUri: null,
+        avatarFailedUris: prevFailed.concat(uri),
+      };
+    });
+  };
+
+  render() {
+    const {
+      displayName,
+      shortCode,
+      size = 40,
+      containerStyle,
+      touchableStyle,
+      onPress,
+      textStyle,
+    } = this.props;
+
+    const { avatarCandidateUris, avatarCandidateRequestId, avatarFailedUris, generatedAvatarUri } = this.state;
+    const avatarCandidateUri = selectAvatarCandidateUri(avatarCandidateUris, avatarFailedUris, generatedAvatarUri);
+    const shouldProbeAvatar = !!(avatarCandidateUri && avatarCandidateRequestId === this._avatarRequestId);
+    const fallbackInitials = getInitials(displayName);
+    const fallbackColor = stringToColor(displayName);
+    const borderRadius = size / 2;
+    const fallbackFontSize = Math.max(12, Math.round(size * 0.45));
+    const avatarSource = generatedAvatarUri ? { uri: generatedAvatarUri } : undefined;
+
+    const avatarContent = avatarSource ? (
+      <View style={[avatarStyles.avatarGeneratedContainer, { borderRadius }]}>
+        <Image source={avatarSource} style={[avatarStyles.avatarGeneratedImage, { borderRadius }]} />
+      </View>
+    ) : (
+      <View style={[avatarStyles.avatarFallbackBase, { backgroundColor: fallbackColor, borderRadius }]}>
+        <Text style={[avatarStyles.avatarFallbackLabel, { fontSize: fallbackFontSize }, textStyle]}>{fallbackInitials}</Text>
+      </View>
+    );
+
+    const content = (
+      <View style={[avatarStyles.avatarWrapperBase, { width: size, height: size, borderRadius }, containerStyle]}>
+        {shouldProbeAvatar && (
+          <Image
+            source={{ uri: avatarCandidateUri }}
+            style={avatarStyles.avatarProbe}
+            onLoad={() => this.onAvatarLoadSuccess(avatarCandidateUri, avatarCandidateRequestId)}
+            onError={() => this.onAvatarLoadError(avatarCandidateUri, avatarCandidateRequestId)}
+          />
+        )}
+        {avatarContent}
+      </View>
+    );
+
+    if (onPress) {
+      return (
+        <TouchableOpacity onPress={onPress} style={touchableStyle} activeOpacity={0.7}>
+          {content}
+        </TouchableOpacity>
+      );
+    }
+
+    if (touchableStyle) {
+      return <View style={touchableStyle}>{content}</View>;
+    }
+
+    return content;
+  }
+}
 
 class Reply extends React.Component {
 
@@ -124,9 +352,11 @@ class Reply extends React.Component {
             }
           </View>
           <View style={{flexDirection: 'row', marginTop: 5}}>
-            <Avatar rounded size="small"
-              title={getInitials(displayName)}
-              containerStyle={{backgroundColor: stringToColor(displayName), marginRight: 5}}
+            <NamespaceAvatar
+              displayName={displayName}
+              shortCode={item.sender.shortCode}
+              size={32}
+              touchableStyle={{marginRight: 5}}
               onPress={() => this.gotoShortCode(item.sender.shortCode)}
             />
             <Text style={styles.sender} numberOfLines={1} ellipsizeMode="tail" onPress={() => this.gotoShortCode(item.sender.shortCode)}>
@@ -646,8 +876,10 @@ class BuyNFT extends React.Component {
         {this.getDeleteModal()}
         <View style={styles.keyContainer}>
           <View style={{paddingRight: 10}}>
-            <Avatar rounded size="medium" title={getInitials(displayName)}
-              containerStyle={{backgroundColor: stringToColor(displayName)}}
+            <NamespaceAvatar
+              displayName={displayName}
+              shortCode={shortCode}
+              size={48}
               onPress={() => this.gotoShortCode(shortCode)}
             />
           </View>
