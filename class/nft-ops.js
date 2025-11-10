@@ -794,3 +794,49 @@ export function decodePSBT(offerTx) {
   const txdecoder = new Txdecoder(tx.toBuffer());
   return txdecoder.decode();
 }
+
+export async function checkOfferValidity(offerTx) {
+  try {
+    const psbt = bitcoin.Psbt.fromBuffer(offerTx);
+    await ensurePsbtInputsUnspent(psbt);
+    return { valid: true };
+  } catch (err) {
+    let message = (err && err.message) ? err.message : 'Unable to verify offer status.';
+    if (message.startsWith('Offer is no longer valid because')) {
+      const match = message.match(/\((.*)\)/);
+      if (match && match[1]) {
+        message = `Buyer funds were spent (${match[1]})`;
+      } else {
+        message = 'Buyer funds were spent';
+      }
+    }
+    if (message.length > 160) {
+      message = message.slice(0, 157) + '...';
+    }
+    return { valid: false, message };
+  }
+}
+
+export async function checkSellListingStatus(walletId, namespaceId) {
+  const wallets = BlueApp.getWallets();
+  const wallet = wallets.find(w => w.getID() == walletId);
+  if (!wallet) {
+    return { valid: false, message: 'Wallet not found.' };
+  }
+
+  try {
+    const nsUtxo = await getNamespaceUtxo(wallet, namespaceId);
+    if (!nsUtxo) {
+      return {
+        valid: false,
+        message: 'Namespace output is missing. Listing might have been updated, cancelled, or already transferred.',
+      };
+    }
+    return { valid: true };
+  } catch (err) {
+    return {
+      valid: false,
+      message: (err && err.message) ? err.message : 'Unable to verify namespace status.',
+    };
+  }
+}
