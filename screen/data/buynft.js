@@ -18,6 +18,8 @@ import {
 } from '../../class/keva-ops';
 import {
   validateOffer,
+  checkOfferValidity,
+  checkSellListingStatus,
 } from '../../class/nft-ops';
 import { FALLBACK_DATA_PER_BYTE_FEE } from '../../models/networkTransactionFees';
 import {
@@ -64,9 +66,36 @@ class Reply extends React.Component {
   }
 
   render() {
-    let {item, isOther} = this.props;
+    let {item, isOther, status} = this.props;
     const displayName = item.sender.displayName;
     let offerValue = item.offerPrice;
+
+    const statusInfo = status || { state: 'checking' };
+    const statusState = statusInfo.state || 'checking';
+    let statusText;
+    let statusColor;
+    if (statusState === 'valid') {
+      statusText = 'Offer status: Active';
+      statusColor = KevaColors.okColor;
+    } else if (statusState === 'invalid') {
+      const reason = statusInfo.message ? statusInfo.message : 'Offer is no longer valid.';
+      statusText = `Offer invalid: ${reason}`;
+      statusColor = KevaColors.errColor;
+    } else {
+      statusText = 'Checking offer status…';
+      statusColor = KevaColors.warnColor;
+    }
+
+    const acceptButtonStyle = {
+      margin: 5,
+      borderRadius: 30,
+      height: 28,
+      width: 90,
+      padding: 0,
+      borderColor: KevaColors.actionText,
+    };
+    const acceptDisabled = statusState === 'invalid';
+    const iconColor = acceptDisabled ? KevaColors.inactiveText : KevaColors.actionText;
 
     return (
       <View style={styles.reply}>
@@ -77,16 +106,19 @@ class Reply extends React.Component {
             {(offerValue > 0 && !isOther) &&
               <Button
                 type='outline'
-                buttonStyle={{margin: 5, borderRadius: 30, height: 28, width: 90, padding: 0, borderColor: KevaColors.actionText}}
+                buttonStyle={acceptButtonStyle}
+                disabledStyle={{ ...acceptButtonStyle, borderColor: KevaColors.cellBorder }}
                 title={"Accept"}
                 titleStyle={{fontSize: 14, color: KevaColors.actionText, marginLeft: 4}}
+                disabledTitleStyle={{fontSize: 14, color: KevaColors.inactiveText, marginLeft: 4}}
                 icon={
                   <Icon
                     name="check"
                     size={18}
-                    color={KevaColors.actionText}
+                    color={iconColor}
                   />
                 }
+                disabled={acceptDisabled}
                 onPress={()=>{this.onAccept(item.value, item.offerPrice)}}
               />
             }
@@ -111,6 +143,9 @@ class Reply extends React.Component {
             :
             <Text style={styles.timestampReply}>{loc.general.unconfirmed}</Text>
           }
+          <Text style={[styles.offerStatusText, { color: statusColor }]}>
+            {statusText}
+          </Text>
         </View>
       </View>
     )
@@ -133,7 +168,10 @@ class BuyNFT extends React.Component {
       opacity: 0,
       replyCount: 0,
       replies: [],
+      saleStatus: null,
+      offerStatuses: {},
     };
+    this._isMounted = false;
   }
 
   static navigationOptions = ({ navigation }) => ({
@@ -158,15 +196,18 @@ class BuyNFT extends React.Component {
   }
 
   async componentDidMount() {
+    this._isMounted = true;
     const {keyValueList} = this.props;
     const {shortCode, displayName, namespaceId, index, type, hashtags, price, addr, desc} = this.props.navigation.state.params;
     this.setState({
       shortCode, displayName, namespaceId, index, type, price, addr, desc
     });
+    this.refreshSaleStatus();
     await this.fetchReplies();
   }
 
   componentWillUnmount () {
+    this._isMounted = false;
     if (this.subs) {
       this.subs.forEach(sub => sub.remove());
     }
@@ -241,37 +282,96 @@ class BuyNFT extends React.Component {
     })
   }
 
-  fetchReplies = async () => {
-    const {navigation} = this.props;
-    const {replyTxid, price, addr} = navigation.state.params;
+  buildOfferStatusKey = (offer, index = 0) => {
+    const senderShort = (offer.sender && offer.sender.shortCode) || 'unknown';
+    let fingerprint = '';
+    if (offer.value && typeof offer.value.toString === 'function') {
+      try {
+        fingerprint = offer.value.toString('hex').slice(0, 16);
+      } catch (e) {}
+    }
+    return `${offer.key || 'offer'}:${senderShort}:${offer.time || 0}:${fingerprint}:${index}`;
+  }
+
+  refreshSaleStatus = async () => {
+    const { navigation } = this.props;
+    const { isOther, walletId, namespaceId } = navigation.state.params;
+    if (isOther || !walletId || !namespaceId) {
+      return;
+    }
+
+    if (this._isMounted) {
+      this.setState({ saleStatus: { state: 'checking' } });
+    }
 
     try {
-      this.setState({isRefreshing: true});
+      const result = await checkSellListingStatus(walletId, namespaceId);
+      if (!this._isMounted) {
+        return;
+      }
+      if (result.valid) {
+        this.setState({ saleStatus: { state: 'valid' } });
+      } else {
+        this.setState({ saleStatus: { state: 'invalid', message: result.message } });
+      }
+    } catch (err) {
+      if (!this._isMounted) {
+        return;
+      }
+      this.setState({
+        saleStatus: {
+          state: 'invalid',
+          message: (err && err.message) ? err.message : 'Unable to verify listing status.',
+        },
+      });
+    }
+  }
+
+  refreshOfferStatuses = async replies => {
+    if (!replies || replies.length === 0) {
+      if (this._isMounted) {
+        this.setState({ offerStatuses: {} });
+      }
+      return;
+    }
+
+    const updates = {};
+    for (let i = 0; i < replies.length; i++) {
+      const reply = replies[i];
+      const statusKey = reply._statusKey || this.buildOfferStatusKey(reply, i);
+      try {
+        const result = await checkOfferValidity(reply.value);
+        if (result.valid) {
+          updates[statusKey] = { state: 'valid' };
+        } else {
+          updates[statusKey] = { state: 'invalid', message: result.message };
+        }
+      } catch (err) {
+        const message = (err && err.message) ? err.message : 'Unable to verify offer status.';
+        updates[statusKey] = { state: 'invalid', message };
+      }
+    }
+
+    if (!this._isMounted) {
+      return;
+    }
+
+    this.setState(prevState => ({
+      offerStatuses: { ...prevState.offerStatuses, ...updates },
+    }));
+  }
+
+  fetchReplies = async (refreshListingStatus = false) => {
+    const {navigation} = this.props;
+    const {replyTxid, price, addr, isOther} = navigation.state.params;
+
+    try {
+      if (this._isMounted) {
+        this.setState({isRefreshing: true});
+      }
       const results = await BlueElectrum.blockchainKeva_getKeyValueReactions(replyTxid);
       const totalReactions = results.result;
-      /*
-        totalReactions format:
-        {
-          "key": "<key>",
-          "value": "<value>",
-          "displayName": <>,
-          "shortCode": <>,
-          "likes": <likes>,
-          "replies": [{
-            "height": <>,
-            "key": <>,
-            "value": <>,
-            "time": <>,
-            "sender": {
-              shortCode: <>,
-              displayName: <>
-            }
-          }],
-          "shares": <shares>
-          ...
-        }
-      */
-      // Decode replies base64
+
       const replies = totalReactions.replies.map(r => {
         r.value = Buffer.from(r.value, 'base64');
         r.offerPrice = validateOffer(r.value, addr, price);
@@ -279,43 +379,35 @@ class BuyNFT extends React.Component {
       });
 
       const sortedReplies = replies.sort((a, b) => (b.offerPrice - a.offerPrice));
-      this.setState({replies: sortedReplies});
+      const placeholders = {};
+      sortedReplies.forEach((reply, idx) => {
+        reply._statusKey = this.buildOfferStatusKey(reply, idx);
+        placeholders[reply._statusKey] = { state: 'checking' };
+      });
 
-      /*
-      // Check if it is a favorite.
-      const reaction = reactions[replyTxid];
-      const favorite = reaction && !!reaction['like'] && totalReactions.likes > 0;
-
-      // Update the replies, shares and favorite.
-      if (type == 'keyvalue') {
-        const keyValues = keyValueList.keyValues[namespaceId];
-        let keyValue = keyValues[index];
-        keyValue.favorite = favorite;
-        keyValue.likes = totalReactions.likes;
-        keyValue.shares = totalReactions.shares;
-        keyValue.replies = totalReactions.replies.length;
-        dispatch(setKeyValue(namespaceId, index, keyValue));
-      } else if (type == 'hashtag') {
-        let keyValue = hashtags[index];
-        keyValue.favorite = favorite;
-        keyValue.likes = totalReactions.likes;
-        keyValue.shares = totalReactions.shares;
-        keyValue.replies = totalReactions.replies.length;
-        const newHashtags = [...hashtags];
-        newHashtags[index] = keyValue;
-        this.setState({
-          hashtags: newHashtags,
-        });
+      if (!this._isMounted) {
+        return;
       }
-      */
 
       this.setState({
-        isRefreshing: false
+        replies: sortedReplies,
+        offerStatuses: placeholders,
+        isRefreshing: false,
+      }, () => {
+        this.refreshOfferStatuses(sortedReplies);
+        if (refreshListingStatus && !isOther) {
+          this.refreshSaleStatus();
+        }
       });
     } catch(err) {
       console.warn(err);
-      this.setState({isRefreshing: false});
+      if (this._isMounted) {
+        this.setState({isRefreshing: false});
+      }
       toastError('Cannot fetch replies');
+      if (refreshListingStatus) {
+        this.refreshSaleStatus();
+      }
     }
   }
 
@@ -521,6 +613,34 @@ class BuyNFT extends React.Component {
       displayKey = getSpecialKeyText(keyType);
     }
 
+    let saleStatusView = null;
+    if (!isOther) {
+      const saleStatus = this.state.saleStatus || { state: 'checking' };
+      const rawMessage = saleStatus.message;
+      const message = rawMessage && rawMessage.length > 160 ? rawMessage.slice(0, 157) + '...' : rawMessage;
+      let saleStatusText;
+      let saleStatusColor;
+      let saleStatusBackground;
+      if (saleStatus.state === 'valid') {
+        saleStatusText = 'Listing status: Active';
+        saleStatusColor = KevaColors.okColor;
+        saleStatusBackground = '#e6f6ea';
+      } else if (saleStatus.state === 'invalid') {
+        saleStatusText = message ? `Listing needs attention: ${message}` : 'Listing is no longer valid';
+        saleStatusColor = KevaColors.errColor;
+        saleStatusBackground = '#fcebea';
+      } else {
+        saleStatusText = 'Checking listing status…';
+        saleStatusColor = KevaColors.warnColor;
+        saleStatusBackground = '#fff8e6';
+      }
+      saleStatusView = (
+        <View style={[styles.saleStatusContainer, { backgroundColor: saleStatusBackground, borderColor: saleStatusColor }]}>
+          <Text style={[styles.saleStatusText, { color: saleStatusColor }]}>{saleStatusText}</Text>
+        </View>
+      );
+    }
+
     const listHeader = (
       <View style={styles.container}>
         {this.getDeleteModal()}
@@ -554,6 +674,7 @@ class BuyNFT extends React.Component {
           </Text>
           <Text style={{fontSize: 16, color: KevaColors.darkText}}>{desc}</Text>
         </View>
+        {saleStatusView}
         <View style={styles.actionContainer}>
           <View style={{flexDirection: 'row'}}>
             {
@@ -592,10 +713,24 @@ class BuyNFT extends React.Component {
         removeClippedSubviews={false}
         contentContainerStyle={{paddingBottom: 100}}
         data={replies}
-        onRefresh={() => this.fetchReplies()}
+        onRefresh={() => this.fetchReplies(true)}
         refreshing={this.state.isRefreshing}
         keyExtractor={(item, index) => item.key + index}
-        renderItem={({item, index}) => <Reply item={item} price={price} addr={addr} shortCode={shortCode} isOther={isOther} navigation={this.props.navigation} />}
+        renderItem={({item, index}) => {
+          const statusKey = item._statusKey || this.buildOfferStatusKey(item, index);
+          const status = this.state.offerStatuses[statusKey];
+          return (
+            <Reply
+              item={item}
+              price={price}
+              addr={addr}
+              shortCode={shortCode}
+              isOther={isOther}
+              navigation={this.props.navigation}
+              status={status}
+            />
+          );
+        }}
       />
     )
   }
@@ -645,6 +780,18 @@ var styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 18,
   },
+  saleStatusContainer: {
+    marginTop: 10,
+    marginHorizontal: 10,
+    borderWidth: THIN_BORDER,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  saleStatusText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
   actionContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -682,6 +829,11 @@ var styles = StyleSheet.create({
     backgroundColor:'#fff',
     borderBottomWidth: THIN_BORDER,
     borderColor: KevaColors.cellBorder,
+  },
+  offerStatusText: {
+    marginTop: 6,
+    fontSize: 13,
+    lineHeight: 18,
   },
   replyValue: {
     fontSize: 18,
