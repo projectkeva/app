@@ -513,8 +513,13 @@ class HashtagExplore extends React.Component {
           }
         }
 
+      }
+
       const ownership = this.resolveNamespaceOwnership(namespaceId, namespaceInfo, cachedEntry);
-      const namespaceInfoToStore = namespaceInfo || (cachedEntry && typeof cachedEntry === 'object' && cachedEntry.namespaceInfo) || null;
+      const namespaceInfoToStore =
+        namespaceInfo ||
+        (cachedEntry && typeof cachedEntry === 'object' && cachedEntry.namespaceInfo) ||
+        null;
       const updatedCacheEntry = {
         isForSale,
         priceText,
