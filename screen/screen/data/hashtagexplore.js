@@ -31,7 +31,7 @@ import { Avatar, Image } from 'react-native-elements';
 import { setMediaInfo, } from '../../actions'
 import {
   getHashtagScriptHash, parseSpecialKey, getSpecialKeyText, decodeBase64,
-  findTxIndex,
+  findTxIndex, getNamespaceInfo,
 } from '../../class/keva-ops';
 import Toast from 'react-native-root-toast';
 import { timeConverter, stringToColor, getInitials, SCREEN_WIDTH, } from "../../util";
@@ -40,6 +40,7 @@ import { extractMedia, getImageGatewayURL, removeMedia } from './mediaManager';
 
 const PLAY_ICON  = <MIcon name="play-arrow" size={50} color="#fff"/>;
 const IMAGE_ICON = <Icon name="ios-image" size={50} color="#fff"/>;
+const SELL_HASHTAG = '#NFTs';
 
 class Item extends React.Component {
 
@@ -191,9 +192,10 @@ class HashtagExplore extends React.Component {
       totalToFetch: 0,
       fetched: 0,
       inputMode: false,
-      hashtag: '#NFTs',
+      hashtag: SELL_HASHTAG,
       searched: false,
       hashtags: [],
+      saleStatusCache: {},
     };
     this.onEndReachedCalledDuringMomentum = true;
   }
@@ -260,19 +262,68 @@ class HashtagExplore extends React.Component {
       }
     });
 
+    let saleStatusCache = this.state.saleStatusCache;
+    let filteredKeyValues = keyValues;
+    if (hashtag.toLowerCase() === SELL_HASHTAG.toLowerCase()) {
+      const filterResult = await this.filterActiveSales(keyValues);
+      filteredKeyValues = filterResult.filteredKeyValues;
+      saleStatusCache = filterResult.saleStatusCache;
+    }
+
+    const nextStateBase = {
+      searched: true,
+      saleStatusCache,
+    };
+
     if (history.min_tx_num < this.state.min_tx_num) {
       // TODO: optimize this, add appendHashtags to avoid
       // duplicating twice.
       this.setState({
-        hashtags: [...hashtags, ...keyValues],
+        ...nextStateBase,
+        hashtags: [...hashtags, ...filteredKeyValues],
         min_tx_num: history.min_tx_num,
       });
     } else {
       this.setState({
-        hashtags: [...keyValues],
+        ...nextStateBase,
+        hashtags: [...filteredKeyValues],
         min_tx_num: history.min_tx_num,
       });
     }
+  }
+
+  filterActiveSales = async (keyValues) => {
+    const saleStatusCache = {...this.state.saleStatusCache};
+    const filteredKeyValues = [];
+
+    for (const keyValue of keyValues) {
+      const namespaceId = keyValue.namespaceId;
+      let isForSale = saleStatusCache[namespaceId];
+      if (typeof isForSale === 'undefined') {
+        try {
+          const namespaceInfo = await getNamespaceInfo(BlueElectrum, namespaceId, false);
+          const rawPrice = namespaceInfo && namespaceInfo.price;
+          if (typeof rawPrice === 'number') {
+            isForSale = rawPrice > 0;
+          } else if (typeof rawPrice === 'string') {
+            const parsedPrice = parseFloat(rawPrice);
+            isForSale = !Number.isNaN(parsedPrice) ? parsedPrice > 0 : rawPrice.trim().length > 0;
+          } else {
+            isForSale = !!rawPrice;
+          }
+        } catch (err) {
+          console.warn(err);
+          isForSale = false;
+        }
+        saleStatusCache[namespaceId] = isForSale;
+      }
+
+      if (isForSale) {
+        filteredKeyValues.push(keyValue);
+      }
+    }
+
+    return {filteredKeyValues, saleStatusCache};
   }
 
   refreshKeyValues = async () => {
