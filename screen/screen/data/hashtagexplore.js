@@ -191,7 +191,7 @@ class HashtagExplore extends React.Component {
       totalToFetch: 0,
       fetched: 0,
       inputMode: false,
-      hashtag: '',
+      hashtag: '#NFTs',
       searched: false,
       hashtags: [],
     };
@@ -315,6 +315,17 @@ class HashtagExplore extends React.Component {
 
   async componentDidMount() {
     this.isBiometricUseCapableAndEnabled = await Biometric.isBiometricUseCapableAndEnabled();
+    if (this.state.hashtag) {
+      try {
+        this.setState({loading: true, min_tx_num: -1, hashtags: []});
+        await this.fetchHashtag(-1);
+      } catch (err) {
+        console.warn(err);
+        Toast.show('Failed to fetch key values');
+      } finally {
+        this.setState({loading: false});
+      }
+    }
   }
 
   onShow = (key, value, tx, replies, shares, likes, height, favorite, shortCode, displayName) => {
