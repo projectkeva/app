@@ -513,10 +513,19 @@ class HashtagExplore extends React.Component {
           }
         }
 
-        saleStatusCache[namespaceId] = {isForSale, priceText, namespaceInfo};
-      } else {
-        saleStatusCache[namespaceId] = {isForSale, priceText, namespaceInfo};
+      const ownership = this.resolveNamespaceOwnership(namespaceId, namespaceInfo, cachedEntry);
+      const namespaceInfoToStore = namespaceInfo || (cachedEntry && typeof cachedEntry === 'object' && cachedEntry.namespaceInfo) || null;
+      const updatedCacheEntry = {
+        isForSale,
+        priceText,
+        namespaceInfo: namespaceInfoToStore,
+      };
+      if (ownership && ownership.walletId) {
+        updatedCacheEntry.ownerWalletId = ownership.walletId;
+      } else if (cachedEntry && typeof cachedEntry === 'object' && cachedEntry.ownerWalletId) {
+        updatedCacheEntry.ownerWalletId = cachedEntry.ownerWalletId;
       }
+      saleStatusCache[namespaceId] = updatedCacheEntry;
 
       if (isForSale) {
         const salePriceText = priceText || (cachedEntry && cachedEntry.priceText) || '';
@@ -588,6 +597,64 @@ class HashtagExplore extends React.Component {
     this.refreshKeyValues();
   }
 
+  resolveNamespaceOwnership = (namespaceId, namespaceInfo = null, cachedEntry = null) => {
+    const { namespaceList } = this.props;
+    const namespaces = (namespaceList && namespaceList.namespaces) || {};
+    const directEntry = namespaces ? namespaces[namespaceId] : null;
+    let walletId = directEntry && directEntry.walletId ? directEntry.walletId : null;
+
+    const fallbackCache = cachedEntry || (this.state && this.state.saleStatusCache && this.state.saleStatusCache[namespaceId]);
+    let resolvedNamespaceInfo = namespaceInfo || null;
+    if (!walletId && fallbackCache && typeof fallbackCache === 'object' && fallbackCache.ownerWalletId) {
+      walletId = fallbackCache.ownerWalletId;
+    }
+    if (!resolvedNamespaceInfo && fallbackCache && typeof fallbackCache === 'object' && fallbackCache.namespaceInfo) {
+      resolvedNamespaceInfo = fallbackCache.namespaceInfo;
+    }
+
+    if (!walletId) {
+      const addrCandidates = [];
+      if (directEntry && directEntry.addr) {
+        addrCandidates.push(directEntry.addr);
+      }
+      if (resolvedNamespaceInfo && resolvedNamespaceInfo.addr) {
+        addrCandidates.push(resolvedNamespaceInfo.addr);
+      }
+      if (addrCandidates.length > 0) {
+        const wallets = typeof BlueApp.getWallets === 'function' ? BlueApp.getWallets() : [];
+        for (const wallet of wallets) {
+          if (!wallet || typeof wallet.weOwnAddress !== 'function') {
+            continue;
+          }
+          let matched = false;
+          for (const candidate of addrCandidates) {
+            if (!candidate) {
+              continue;
+            }
+            try {
+              if (wallet.weOwnAddress(candidate)) {
+                walletId = wallet.getID();
+                matched = true;
+                break;
+              }
+            } catch (err) {
+              console.warn(err);
+            }
+          }
+          if (matched) {
+            break;
+          }
+        }
+      }
+    }
+
+    return {
+      walletId: walletId || null,
+      namespaceEntry: directEntry || null,
+      namespaceInfo: resolvedNamespaceInfo || null,
+    };
+  }
+
   onShow = async (keyValue) => {
     const {navigation, namespaceList} = this.props;
     const {hashtags, saleStatusCache} = this.state;
@@ -607,6 +674,7 @@ class HashtagExplore extends React.Component {
       }
       const namespaces = (namespaceList && namespaceList.namespaces) || {};
       const namespaceEntry = namespaces[namespaceId];
+      const fallbackWalletId = (namespaceEntry && namespaceEntry.walletId) || null;
       let namespaceInfo = keyValue.namespaceInfo;
       if (!namespaceInfo) {
         const cachedEntry = saleStatusCache[namespaceId];
@@ -640,18 +708,26 @@ class HashtagExplore extends React.Component {
         }
       }
 
-      const displayName = (namespaceEntry && namespaceEntry.displayName) || (namespaceInfo && namespaceInfo.displayName) || keyValue.displayName;
-      if (namespaceEntry && namespaceEntry.walletId) {
-        const namespaceInfoParam = {...(namespaceEntry || {}), ...(namespaceInfo || {})};
+      const ownership = this.resolveNamespaceOwnership(namespaceId, namespaceInfo, saleStatusCache[namespaceId]);
+      const ownerWalletId = ownership.walletId;
+      const mergedNamespaceInfo = {
+        ...(ownership.namespaceEntry || namespaceEntry || {}),
+        ...(namespaceInfo || {}),
+      };
+      if (!mergedNamespaceInfo.shortCode && keyValue.shortCode) {
+        mergedNamespaceInfo.shortCode = keyValue.shortCode;
+      }
+      const displayName = mergedNamespaceInfo.displayName || keyValue.displayName;
+      if (ownerWalletId) {
         navigation.navigate('SellNFT', {
-          walletId: namespaceEntry.walletId,
+          walletId: ownerWalletId,
           namespaceId,
-          namespaceInfo: namespaceInfoParam,
+          namespaceInfo: mergedNamespaceInfo,
           onSaleCreated: this.handleSaleStateChange,
         });
       } else {
         navigation.push('BuyNFT', {
-          walletId: namespaceEntry ? namespaceEntry.walletId : null,
+          walletId: fallbackWalletId,
           namespaceId,
           index,
           type: 'hashtag',
