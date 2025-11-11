@@ -43,6 +43,24 @@ const PLAY_ICON  = <MIcon name="play-arrow" size={50} color="#fff"/>;
 const IMAGE_ICON = <Icon name="ios-image" size={50} color="#fff"/>;
 const SELL_HASHTAG = '#NFTs';
 const SELL_HASHTAG_BLOCK_WINDOW = 20000;
+const SELL_HASHTAG_LOWER = SELL_HASHTAG.toLowerCase();
+
+const formatSalePrice = rawPrice => {
+  if (rawPrice === null || typeof rawPrice === 'undefined') {
+    return '';
+  }
+  if (typeof rawPrice === 'string') {
+    return rawPrice.trim();
+  }
+  if (typeof rawPrice === 'number') {
+    if (!Number.isFinite(rawPrice)) {
+      return '';
+    }
+    const withPrecision = rawPrice % 1 === 0 ? rawPrice.toString() : rawPrice.toFixed(8);
+    return withPrecision.replace(/\.?0+$/, '');
+  }
+  return String(rawPrice);
+};
 
 const selectAvatarCandidateUri = (candidateUris = [], failedUris = [], generatedUri = null) => {
   if (generatedUri) return null;
@@ -239,7 +257,7 @@ class Item extends React.Component {
   }
 
   render() {
-    let {item, onShow, onReply, onShare, onReward} = this.props;
+    let {item, onShow, onReply, onShare, onReward, currentHashtag} = this.props;
     let {thumbnail, avatarCandidateUris, avatarCandidateRequestId, avatarFailedUris, generatedAvatarUri} = this.state;
     const {mediaCID, mimeType} = extractMedia(item.value);
     let displayKey = item.key;
@@ -253,6 +271,19 @@ class Item extends React.Component {
     const fallbackInitials = getInitials(item.displayName);
     const fallbackColor = stringToColor(item.displayName);
     const avatarSource = generatedAvatarUri ? { uri: generatedAvatarUri } : undefined;
+    const hashtagLower = (currentHashtag || '').trim().toLowerCase();
+    const isSellHashtag = hashtagLower === SELL_HASHTAG_LOWER;
+    let titleText = displayKey;
+    let priceLabel = null;
+    if (isSellHashtag) {
+      titleText = item.shortCode || displayKey;
+      const salePriceText = (item.salePriceText || '').toString().trim();
+      if (salePriceText.length > 0) {
+        priceLabel = (
+          <Text style={styles.priceLabel}>{`${salePriceText} KVA`}</Text>
+        );
+      }
+    }
     const avatarContent = avatarSource ? (
       <View style={styles.generatedAvatarContainer}>
         <Image source={avatarSource} style={styles.generatedAvatarImage} />
@@ -267,7 +298,7 @@ class Item extends React.Component {
       <View style={styles.card}>
         <TouchableOpacity onPress={() => onShow(item.key, item.value, item.tx, item.replies, item.shares, item.likes, item.height, item.favorite, item.shortCode, item.displayName)}>
           <View style={{flex:1,paddingHorizontal:10,paddingTop:2}}>
-            <View style={{flexDirection:'row',alignItems:'center',justifyContent:'space-between'}}>
+            <View style={styles.headerRow}>
               <View style={styles.avatarWrapper}>
                 {shouldProbeAvatar && (
                   <Image
@@ -279,9 +310,9 @@ class Item extends React.Component {
                 )}
                 {avatarContent}
               </View>
-              <Text style={styles.keyDesc} numberOfLines={1} ellipsizeMode="tail">{displayKey}</Text>
-              <View style={{flexDirection: 'row', alignItems:'center',justifyContent:'flex-start'}}>
-                <View style={{height: 50}}/>
+              <View style={styles.headerTextContainer}>
+                <Text style={styles.keyDesc} numberOfLines={1} ellipsizeMode="tail">{titleText}</Text>
+                {priceLabel}
               </View>
             </View>
             {(item.height > 0) ?
@@ -402,7 +433,7 @@ class HashtagExplore extends React.Component {
 
     let latestBlockHeight = this.state.latestBlockHeight;
     let minAllowedHeight = null;
-    const shouldRestrictByHeight = hashtagLower === SELL_HASHTAG.toLowerCase();
+    const shouldRestrictByHeight = hashtagLower === SELL_HASHTAG_LOWER;
     if (shouldRestrictByHeight && !Number.isFinite(latestBlockHeight)) {
       try {
         latestBlockHeight = await BlueElectrum.blockchainBlock_count();
@@ -488,11 +519,20 @@ class HashtagExplore extends React.Component {
 
     for (const keyValue of keyValues) {
       const namespaceId = keyValue.namespaceId;
-      let isForSale = saleStatusCache[namespaceId];
+      const cachedEntry = saleStatusCache[namespaceId];
+      let isForSale;
+      let priceText = '';
+      if (cachedEntry && typeof cachedEntry === 'object') {
+        isForSale = cachedEntry.isForSale;
+        priceText = cachedEntry.priceText || '';
+      } else if (typeof cachedEntry !== 'undefined') {
+        isForSale = cachedEntry;
+      }
       if (typeof isForSale === 'undefined') {
         try {
           const namespaceInfo = await getNamespaceInfo(BlueElectrum, namespaceId, false);
           const rawPrice = namespaceInfo && namespaceInfo.price;
+          priceText = formatSalePrice(rawPrice);
           if (typeof rawPrice === 'number') {
             isForSale = rawPrice > 0;
           } else if (typeof rawPrice === 'string') {
@@ -505,11 +545,12 @@ class HashtagExplore extends React.Component {
           console.warn(err);
           isForSale = false;
         }
-        saleStatusCache[namespaceId] = isForSale;
+        saleStatusCache[namespaceId] = {isForSale, priceText};
       }
 
       if (isForSale) {
-        filteredKeyValues.push(keyValue);
+        const salePriceText = priceText || (cachedEntry && cachedEntry.priceText) || '';
+        filteredKeyValues.push({...keyValue, salePriceText});
       }
     }
 
@@ -531,7 +572,7 @@ class HashtagExplore extends React.Component {
 
   loadMoreKeyValues = async () => {
     const hashtagLower = this.state.hashtag.trim().toLowerCase();
-    if (hashtagLower === SELL_HASHTAG.toLowerCase() && !this.state.hasMoreWithinWindow) {
+    if (hashtagLower === SELL_HASHTAG_LOWER && !this.state.hasMoreWithinWindow) {
       return;
     }
     if(this.onEndReachedCalledDuringMomentum) {
@@ -597,6 +638,10 @@ class HashtagExplore extends React.Component {
   updateHashtag = (index, keyValue) => {
     const {hashtags} = this.state;
     const newHashtags = [...hashtags];
+    const existingValue = newHashtags[index];
+    if (existingValue && existingValue.salePriceText && !keyValue.salePriceText) {
+      keyValue = {...keyValue, salePriceText: existingValue.salePriceText};
+    }
     newHashtags[index] = keyValue;
     this.setState({
       hashtags: newHashtags
@@ -764,6 +809,7 @@ class HashtagExplore extends React.Component {
                 onReward={this.onReward}
                 navigation={navigation}
                 mediaInfoList={mediaInfoList}
+                currentHashtag={hashtag}
               />
             }
           />
@@ -854,6 +900,24 @@ var styles = StyleSheet.create({
     flex: 1,
     fontSize:16,
     color: KevaColors.darkText,
+    marginRight: 10,
+  },
+  headerRow: {
+    flexDirection:'row',
+    alignItems:'center',
+    justifyContent:'flex-start',
+  },
+  headerTextContainer: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  priceLabel: {
+    fontSize: 14,
+    color: KevaColors.actionText,
+    fontWeight: '600',
+    marginLeft: 10,
   },
   valueDesc: {
     flex: 1,
