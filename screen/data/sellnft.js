@@ -24,6 +24,8 @@ import FloatTextInput from '../../common/FloatTextInput';
 import StepModal from "../../common/StepModalWizard";
 import Biometric from '../../class/biometrics';
 
+const SELL_HASHTAG = '#xkevasell';
+
 class SellNFT extends React.Component {
 
   constructor() {
@@ -84,6 +86,8 @@ class SellNFT extends React.Component {
       toastError('Missing description');
       return;
     }
+
+    const descWithSellTag = this.ensureSellHashtag(desc);
     const wallets = BlueApp.getWallets();
     this.wallet = wallets.find(w => w.getID() == walletId);
     if (!this.wallet) {
@@ -99,6 +103,7 @@ class SellNFT extends React.Component {
       isBroadcasting: false,
       fee: 0,
       createTransactionErr: null,
+      desc: descWithSellTag,
     }, () => {
         setTimeout(async () => {
           try {
@@ -109,7 +114,9 @@ class SellNFT extends React.Component {
             const key = '\x01_KEVA_NS_';
             const value = {
               displayName: namespaceInfo.displayName,
-              price, desc, addr,
+              price,
+              desc: descWithSellTag,
+              addr,
             };
             const { tx, fee } = await updateKeyValue(this.wallet, FALLBACK_DATA_PER_BYTE_FEE, namespaceId, key, JSON.stringify(value));
             let feeKVA = fee / 100000000;
@@ -153,6 +160,20 @@ class SellNFT extends React.Component {
     namespaceInfo[namespaceId].desc = desc;
 
     dispatch(setNamespaceList(namespaceInfo, order));
+  }
+
+  ensureSellHashtag = (desc) => {
+    if (typeof desc !== 'string') {
+      return SELL_HASHTAG;
+    }
+    if (desc.toLowerCase().includes(SELL_HASHTAG)) {
+      return desc;
+    }
+    const trimmedDesc = desc.trimEnd();
+    if (trimmedDesc.length === 0) {
+      return SELL_HASHTAG;
+    }
+    return `${trimmedDesc} ${SELL_HASHTAG}`;
   }
 
   getSellNFTModal = () => {
