@@ -27,7 +27,7 @@ import MIcon from 'react-native-vector-icons/MaterialIcons';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { connect } from 'react-redux'
 import { createThumbnail } from "react-native-create-thumbnail";
-import { Avatar, Image } from 'react-native-elements';
+import { Image } from 'react-native-elements';
 import { setMediaInfo, } from '../../actions'
 import {
   getHashtagScriptHash, parseSpecialKey, getSpecialKeyText, decodeBase64,
@@ -37,17 +37,40 @@ import Toast from 'react-native-root-toast';
 import { timeConverter, stringToColor, getInitials, SCREEN_WIDTH, } from "../../util";
 import Biometric from '../../class/biometrics';
 import { extractMedia, getImageGatewayURL, removeMedia } from './mediaManager';
+import { buildHeadAssetUriCandidates } from '../../common/namespaceAvatar';
 
 const PLAY_ICON  = <MIcon name="play-arrow" size={50} color="#fff"/>;
 const IMAGE_ICON = <Icon name="ios-image" size={50} color="#fff"/>;
 const SELL_HASHTAG = '#NFTs';
 const SELL_HASHTAG_BLOCK_WINDOW = 20000;
 
+const selectAvatarCandidateUri = (candidateUris = [], failedUris = [], generatedUri = null) => {
+  if (generatedUri) return null;
+  for (const candidate of candidateUris) {
+    if (!candidate) continue;
+    if (failedUris && failedUris.includes(candidate)) continue;
+    return candidate;
+  }
+  return null;
+};
+
 class Item extends React.Component {
 
   constructor(props) {
     super(props);
-    this.state = { loading: false, selectedImage: null, isRefreshing: false, thumbnail: null };
+    this.state = {
+      loading: false,
+      selectedImage: null,
+      isRefreshing: false,
+      thumbnail: null,
+      avatarCandidateUris: [],
+      avatarCandidateRequestId: 0,
+      avatarFailedUris: [],
+      generatedAvatarUri: null,
+    };
+    this._avatarRequestId = 0;
+    this._avatarHandle = null;
+    this._isMounted = false;
   }
 
   onEdit = () => {
@@ -73,8 +96,120 @@ class Item extends React.Component {
   }
 
   async componentDidMount() {
+    this._isMounted = true;
+    this.prepareGeneratedAvatar(this.getShortCode());
     InteractionManager.runAfterInteractions(async () => {
       await this._componentDidMount();
+    });
+  }
+
+  componentDidUpdate(prevProps) {
+    const prevShortCode = this.getShortCode(prevProps);
+    const currentShortCode = this.getShortCode();
+    if (prevShortCode !== currentShortCode) {
+      this.prepareGeneratedAvatar(currentShortCode);
+    }
+  }
+
+  componentWillUnmount() {
+    this._isMounted = false;
+    if (this._avatarHandle && typeof this._avatarHandle.cancel === 'function') {
+      this._avatarHandle.cancel();
+    }
+    this._avatarHandle = null;
+  }
+
+  getShortCode = (props = this.props) => {
+    const { item } = props;
+    if (item && item.shortCode) {
+      return item.shortCode;
+    }
+    return null;
+  }
+
+  prepareGeneratedAvatar = shortCode => {
+    if (this._avatarHandle && typeof this._avatarHandle.cancel === 'function') {
+      this._avatarHandle.cancel();
+    }
+
+    if (!shortCode) {
+      if (this._isMounted) {
+        this.setState({
+          avatarCandidateUris: [],
+          avatarCandidateRequestId: 0,
+          avatarFailedUris: [],
+          generatedAvatarUri: null,
+        });
+      }
+      this._avatarHandle = null;
+      return;
+    }
+
+    const requestId = ++this._avatarRequestId;
+
+    const scheduleTask = () => {
+      this._avatarHandle = null;
+      const candidateUris = buildHeadAssetUriCandidates(shortCode);
+      if (!this._isMounted || requestId !== this._avatarRequestId) {
+        return;
+      }
+      if (!candidateUris || candidateUris.length === 0) {
+        this.setState({
+          avatarCandidateUris: [],
+          avatarCandidateRequestId: 0,
+          avatarFailedUris: [],
+          generatedAvatarUri: null,
+        });
+        return;
+      }
+      this.setState(prevState => {
+        const prevCandidateUris = prevState.avatarCandidateUris || [];
+        const sameCandidates =
+          prevCandidateUris.length === candidateUris.length &&
+          prevCandidateUris.every((uri, idx) => uri === candidateUris[idx]);
+        return {
+          avatarCandidateUris: candidateUris,
+          avatarCandidateRequestId: requestId,
+          avatarFailedUris: sameCandidates ? prevState.avatarFailedUris || [] : [],
+          generatedAvatarUri: sameCandidates ? prevState.generatedAvatarUri : null,
+        };
+      });
+    };
+
+    const handle = InteractionManager.runAfterInteractions(() => {
+      scheduleTask();
+    });
+
+    if (handle && typeof handle.cancel === 'function') {
+      this._avatarHandle = handle;
+    } else {
+      scheduleTask();
+    }
+  }
+
+  onAvatarLoadSuccess = (uri, requestId) => {
+    if (!this._isMounted || requestId !== this._avatarRequestId) {
+      return;
+    }
+    this.setState({
+      generatedAvatarUri: uri,
+      avatarFailedUris: [],
+    });
+  }
+
+  onAvatarLoadError = (uri, requestId) => {
+    if (!this._isMounted || requestId !== this._avatarRequestId) {
+      return;
+    }
+    this.setState(prevState => {
+      const prevFailed = prevState.avatarFailedUris || [];
+      if (prevFailed.includes(uri) && prevState.generatedAvatarUri === null) {
+        return null;
+      }
+      return {
+        generatedAvatarUri: null,
+        avatarFailedUris: prevFailed.concat(uri),
+      };
     });
   }
 
@@ -105,7 +240,7 @@ class Item extends React.Component {
 
   render() {
     let {item, onShow, onReply, onShare, onReward} = this.props;
-    let {thumbnail} = this.state;
+    let {thumbnail, avatarCandidateUris, avatarCandidateRequestId, avatarFailedUris, generatedAvatarUri} = this.state;
     const {mediaCID, mimeType} = extractMedia(item.value);
     let displayKey = item.key;
     const {keyType} = parseSpecialKey(item.key);
@@ -113,13 +248,36 @@ class Item extends React.Component {
       displayKey = getSpecialKeyText(keyType);
     }
 
+    const avatarCandidateUri = selectAvatarCandidateUri(avatarCandidateUris, avatarFailedUris, generatedAvatarUri);
+    const shouldProbeAvatar = !!(avatarCandidateUri && avatarCandidateRequestId === this._avatarRequestId);
+    const fallbackInitials = getInitials(item.displayName);
+    const fallbackColor = stringToColor(item.displayName);
+    const avatarSource = generatedAvatarUri ? { uri: generatedAvatarUri } : undefined;
+    const avatarContent = avatarSource ? (
+      <View style={styles.generatedAvatarContainer}>
+        <Image source={avatarSource} style={styles.generatedAvatarImage} />
+      </View>
+    ) : (
+      <View style={[styles.fallbackAvatar, { backgroundColor: fallbackColor }]}>
+        <Text style={styles.fallbackAvatarLabel}>{fallbackInitials}</Text>
+      </View>
+    );
+
     return (
       <View style={styles.card}>
         <TouchableOpacity onPress={() => onShow(item.key, item.value, item.tx, item.replies, item.shares, item.likes, item.height, item.favorite, item.shortCode, item.displayName)}>
           <View style={{flex:1,paddingHorizontal:10,paddingTop:2}}>
             <View style={{flexDirection:'row',alignItems:'center',justifyContent:'space-between'}}>
-              <View style={{paddingRight: 10}}>
-                <Avatar rounded size="small" title={getInitials(item.displayName)} containerStyle={{backgroundColor: stringToColor(item.displayName)}}/>
+              <View style={styles.avatarWrapper}>
+                {shouldProbeAvatar && (
+                  <Image
+                    source={{ uri: avatarCandidateUri }}
+                    style={styles.avatarProbe}
+                    onLoad={() => this.onAvatarLoadSuccess(avatarCandidateUri, avatarCandidateRequestId)}
+                    onError={() => this.onAvatarLoadError(avatarCandidateUri, avatarCandidateRequestId)}
+                  />
+                )}
+                {avatarContent}
               </View>
               <Text style={styles.keyDesc} numberOfLines={1} ellipsizeMode="tail">{displayKey}</Text>
               <View style={{flexDirection: 'row', alignItems:'center',justifyContent:'flex-start'}}>
@@ -651,6 +809,46 @@ var styles = StyleSheet.create({
     marginVertical:0,
     borderBottomWidth: THIN_BORDER,
     borderColor: KevaColors.cellBorder,
+  },
+  avatarWrapper: {
+    paddingRight: 10,
+    paddingTop: 5,
+    paddingBottom: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  generatedAvatarContainer: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#fff',
+    justifyContent: 'center',
+    alignItems: 'center',
+    overflow: 'hidden',
+  },
+  generatedAvatarImage: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    resizeMode: 'cover',
+  },
+  fallbackAvatar: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  fallbackAvatarLabel: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  avatarProbe: {
+    width: 1,
+    height: 1,
+    position: 'absolute',
+    opacity: 0,
   },
   keyDesc: {
     flex: 1,
