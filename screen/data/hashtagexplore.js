@@ -733,33 +733,26 @@ class HashtagExplore extends React.Component {
         mergedNamespaceInfo.shortCode = keyValue.shortCode;
       }
       const displayName = mergedNamespaceInfo.displayName || keyValue.displayName;
-      if (ownerWalletId) {
-        navigation.navigate('SellNFT', {
-          walletId: ownerWalletId,
-          namespaceId,
-          namespaceInfo: mergedNamespaceInfo,
-          onSaleCreated: this.handleSaleStateChange,
-        });
-      } else {
-        navigation.push('BuyNFT', {
-          walletId: fallbackWalletId,
-          namespaceId,
-          index,
-          type: 'hashtag',
-          displayName,
-          shortCode: keyValue.shortCode,
-          replyTxid: keyValue.tx,
-          isOther: true,
-          price: namespaceInfo && namespaceInfo.price,
-          desc: namespaceInfo && namespaceInfo.desc,
-          addr: namespaceInfo && namespaceInfo.addr,
-          profile: namespaceInfo && namespaceInfo.profile,
-          hashtags,
-          updateHashtag: this.updateHashtag,
-          onCancelSale: this.handleSaleStateChange,
-          onSoldorOffer: this.handleSaleStateChange,
-        });
-      }
+      const targetWalletId = ownerWalletId || fallbackWalletId || null;
+
+      navigation.push('BuyNFT', {
+        walletId: targetWalletId,
+        namespaceId,
+        index,
+        type: 'hashtag',
+        displayName,
+        shortCode: keyValue.shortCode,
+        replyTxid: keyValue.tx,
+        isOther: true,
+        price: namespaceInfo && namespaceInfo.price,
+        desc: namespaceInfo && namespaceInfo.desc,
+        addr: namespaceInfo && namespaceInfo.addr,
+        profile: namespaceInfo && namespaceInfo.profile,
+        hashtags,
+        updateHashtag: this.updateHashtag,
+        onCancelSale: this.handleSaleStateChange,
+        onSoldorOffer: this.handleSaleStateChange,
+      });
       return;
     }
 
