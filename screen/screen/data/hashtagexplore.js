@@ -41,6 +41,7 @@ import { extractMedia, getImageGatewayURL, removeMedia } from './mediaManager';
 const PLAY_ICON  = <MIcon name="play-arrow" size={50} color="#fff"/>;
 const IMAGE_ICON = <Icon name="ios-image" size={50} color="#fff"/>;
 const SELL_HASHTAG = '#NFTs';
+const SELL_HASHTAG_BLOCK_WINDOW = 20000;
 
 class Item extends React.Component {
 
@@ -196,6 +197,8 @@ class HashtagExplore extends React.Component {
       searched: false,
       hashtags: [],
       saleStatusCache: {},
+      latestBlockHeight: undefined,
+      hasMoreWithinWindow: true,
     };
     this.onEndReachedCalledDuringMomentum = true;
   }
@@ -211,7 +214,7 @@ class HashtagExplore extends React.Component {
 
   onSearchHashtag = async () => {
     Keyboard.dismiss();
-    this.setState({min_tx_num: -1, loading: true, hashtags: []});
+    this.setState({min_tx_num: -1, loading: true, hashtags: [], latestBlockHeight: undefined, hasMoreWithinWindow: true});
     await this.fetchHashtag(-1);
     this.setState({loading: false});
   }
@@ -237,13 +240,40 @@ class HashtagExplore extends React.Component {
     */
     const {hashtags} = this.state;
     const hashtag = this.state.hashtag.trim();
+    const hashtagLower = hashtag.toLowerCase();
+
+    let latestBlockHeight = this.state.latestBlockHeight;
+    let minAllowedHeight = null;
+    const shouldRestrictByHeight = hashtagLower === SELL_HASHTAG.toLowerCase();
+    if (shouldRestrictByHeight && !Number.isFinite(latestBlockHeight)) {
+      try {
+        latestBlockHeight = await BlueElectrum.blockchainBlock_count();
+      } catch (err) {
+        console.warn(err);
+        latestBlockHeight = undefined;
+      }
+    }
+    if (shouldRestrictByHeight && Number.isFinite(latestBlockHeight)) {
+      minAllowedHeight = Math.max(0, latestBlockHeight - SELL_HASHTAG_BLOCK_WINDOW);
+    }
+
     let history = await BlueElectrum.blockchainKeva_getHashtag(getHashtagScriptHash(hashtag), min_tx_num);
     if (history.hashtags.length == 0) {
-      this.setState({searched: true});
+      this.setState({searched: true, latestBlockHeight});
       return;
     }
 
-    const keyValues = history.hashtags.map(h => {
+    const filteredByHeight = history.hashtags.filter(h => {
+      if (!shouldRestrictByHeight || minAllowedHeight === null) {
+        return true;
+      }
+      if (typeof h.height !== 'number' || h.height <= 0) {
+        return true;
+      }
+      return h.height >= minAllowedHeight;
+    });
+
+    const keyValues = filteredByHeight.map(h => {
       const reaction = reactions[h.tx_hash];
       const favorite = reaction && !!reaction['like'];
       return {
@@ -264,7 +294,7 @@ class HashtagExplore extends React.Component {
 
     let saleStatusCache = this.state.saleStatusCache;
     let filteredKeyValues = keyValues;
-    if (hashtag.toLowerCase() === SELL_HASHTAG.toLowerCase()) {
+    if (shouldRestrictByHeight) {
       const filterResult = await this.filterActiveSales(keyValues);
       filteredKeyValues = filterResult.filteredKeyValues;
       saleStatusCache = filterResult.saleStatusCache;
@@ -273,6 +303,8 @@ class HashtagExplore extends React.Component {
     const nextStateBase = {
       searched: true,
       saleStatusCache,
+      latestBlockHeight,
+      hasMoreWithinWindow: shouldRestrictByHeight ? filteredByHeight.length > 0 : this.state.hasMoreWithinWindow,
     };
 
     if (history.min_tx_num < this.state.min_tx_num) {
@@ -328,7 +360,7 @@ class HashtagExplore extends React.Component {
 
   refreshKeyValues = async () => {
     try {
-      this.setState({isRefreshing: true});
+      this.setState({isRefreshing: true, latestBlockHeight: undefined, hasMoreWithinWindow: true});
       await BlueElectrum.ping();
       await this.fetchHashtag(-1);
       this.setState({isRefreshing: false});
@@ -340,6 +372,10 @@ class HashtagExplore extends React.Component {
   }
 
   loadMoreKeyValues = async () => {
+    const hashtagLower = this.state.hashtag.trim().toLowerCase();
+    if (hashtagLower === SELL_HASHTAG.toLowerCase() && !this.state.hasMoreWithinWindow) {
+      return;
+    }
     if(this.onEndReachedCalledDuringMomentum) {
       return;
     }
