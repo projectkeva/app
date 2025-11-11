@@ -295,7 +295,7 @@ class Item extends React.Component {
 
     return (
       <View style={styles.card}>
-        <TouchableOpacity onPress={() => onShow(item.key, item.value, item.tx, item.replies, item.shares, item.likes, item.height, item.favorite, item.shortCode, item.displayName)}>
+        <TouchableOpacity onPress={() => onShow(item)}>
           <View style={{flex:1,paddingHorizontal:10,paddingTop:2}}>
             <View style={styles.headerRow}>
               <View style={styles.avatarWrapper}>
@@ -477,35 +477,50 @@ class HashtagExplore extends React.Component {
       const cachedEntry = saleStatusCache[namespaceId];
       let isForSale;
       let priceText = '';
+      let namespaceInfo;
       if (cachedEntry && typeof cachedEntry === 'object') {
         isForSale = cachedEntry.isForSale;
         priceText = cachedEntry.priceText || '';
+        namespaceInfo = cachedEntry.namespaceInfo;
       } else if (typeof cachedEntry !== 'undefined') {
         isForSale = cachedEntry;
       }
-      if (typeof isForSale === 'undefined') {
+
+      const needsNamespaceInfo = !namespaceInfo;
+      if (typeof isForSale === 'undefined' || needsNamespaceInfo) {
         try {
-          const namespaceInfo = await getNamespaceInfo(BlueElectrum, namespaceId, false);
+          const fetchedNamespaceInfo = await getNamespaceInfo(BlueElectrum, namespaceId, false);
+          namespaceInfo = fetchedNamespaceInfo || null;
           const rawPrice = namespaceInfo && namespaceInfo.price;
-          priceText = formatSalePrice(rawPrice);
-          if (typeof rawPrice === 'number') {
-            isForSale = rawPrice > 0;
-          } else if (typeof rawPrice === 'string') {
-            const parsedPrice = parseFloat(rawPrice);
-            isForSale = !Number.isNaN(parsedPrice) ? parsedPrice > 0 : rawPrice.trim().length > 0;
-          } else {
-            isForSale = !!rawPrice;
+          const formattedPrice = formatSalePrice(rawPrice);
+          if (formattedPrice) {
+            priceText = formattedPrice;
+          }
+          if (typeof isForSale === 'undefined') {
+            if (typeof rawPrice === 'number') {
+              isForSale = rawPrice > 0;
+            } else if (typeof rawPrice === 'string') {
+              const parsedPrice = parseFloat(rawPrice);
+              isForSale = !Number.isNaN(parsedPrice) ? parsedPrice > 0 : rawPrice.trim().length > 0;
+            } else {
+              isForSale = !!rawPrice;
+            }
           }
         } catch (err) {
           console.warn(err);
-          isForSale = false;
+          if (typeof isForSale === 'undefined') {
+            isForSale = false;
+          }
         }
-        saleStatusCache[namespaceId] = {isForSale, priceText};
+
+        saleStatusCache[namespaceId] = {isForSale, priceText, namespaceInfo};
+      } else {
+        saleStatusCache[namespaceId] = {isForSale, priceText, namespaceInfo};
       }
 
       if (isForSale) {
         const salePriceText = priceText || (cachedEntry && cachedEntry.priceText) || '';
-        filteredKeyValues.push({...keyValue, salePriceText});
+        filteredKeyValues.push({...keyValue, salePriceText, namespaceInfo});
       }
     }
 
@@ -569,22 +584,103 @@ class HashtagExplore extends React.Component {
     }
   }
 
-  onShow = (key, value, tx, replies, shares, likes, height, favorite, shortCode, displayName) => {
-    const {navigation} = this.props;
-    const {hashtags} = this.state;
-    const index = findTxIndex(hashtags, tx);
+  handleSaleStateChange = () => {
+    this.refreshKeyValues();
+  }
+
+  onShow = async (keyValue) => {
+    const {navigation, namespaceList} = this.props;
+    const {hashtags, saleStatusCache} = this.state;
+    if (!keyValue) {
+      return;
+    }
+    const index = findTxIndex(hashtags, keyValue.tx);
     if (index < 0) {
       return;
     }
+
+    const currentHashtagLower = (this.state.hashtag || '').trim().toLowerCase();
+    if (currentHashtagLower === SELL_HASHTAG_LOWER) {
+      const namespaceId = keyValue.namespaceId;
+      if (!namespaceId) {
+        return;
+      }
+      const namespaces = (namespaceList && namespaceList.namespaces) || {};
+      const namespaceEntry = namespaces[namespaceId];
+      let namespaceInfo = keyValue.namespaceInfo;
+      if (!namespaceInfo) {
+        const cachedEntry = saleStatusCache[namespaceId];
+        if (cachedEntry && typeof cachedEntry === 'object' && cachedEntry.namespaceInfo) {
+          namespaceInfo = cachedEntry.namespaceInfo;
+        }
+      }
+      if (!namespaceInfo) {
+        try {
+          const fetchedInfo = await getNamespaceInfo(BlueElectrum, namespaceId, false);
+          namespaceInfo = fetchedInfo || null;
+          if (namespaceInfo) {
+            this.setState(prevState => {
+              const prevEntry = prevState.saleStatusCache[namespaceId];
+              if (prevEntry && typeof prevEntry === 'object' && prevEntry.namespaceInfo === namespaceInfo) {
+                return null;
+              }
+              const baseEntry = prevEntry && typeof prevEntry === 'object'
+                ? prevEntry
+                : { isForSale: true, priceText: keyValue.salePriceText || '' };
+              return {
+                saleStatusCache: {
+                  ...prevState.saleStatusCache,
+                  [namespaceId]: {...baseEntry, namespaceInfo},
+                }
+              };
+            });
+          }
+        } catch (err) {
+          console.warn(err);
+        }
+      }
+
+      const displayName = (namespaceEntry && namespaceEntry.displayName) || (namespaceInfo && namespaceInfo.displayName) || keyValue.displayName;
+      if (namespaceEntry && namespaceEntry.walletId) {
+        const namespaceInfoParam = {...(namespaceEntry || {}), ...(namespaceInfo || {})};
+        navigation.navigate('SellNFT', {
+          walletId: namespaceEntry.walletId,
+          namespaceId,
+          namespaceInfo: namespaceInfoParam,
+          onSaleCreated: this.handleSaleStateChange,
+        });
+      } else {
+        navigation.push('BuyNFT', {
+          walletId: namespaceEntry ? namespaceEntry.walletId : null,
+          namespaceId,
+          index,
+          type: 'hashtag',
+          displayName,
+          shortCode: keyValue.shortCode,
+          replyTxid: keyValue.tx,
+          isOther: true,
+          price: namespaceInfo && namespaceInfo.price,
+          desc: namespaceInfo && namespaceInfo.desc,
+          addr: namespaceInfo && namespaceInfo.addr,
+          profile: namespaceInfo && namespaceInfo.profile,
+          hashtags,
+          updateHashtag: this.updateHashtag,
+          onCancelSale: this.handleSaleStateChange,
+          onSoldorOffer: this.handleSaleStateChange,
+        });
+      }
+      return;
+    }
+
     navigation.push('ShowKeyValue', {
       index,
       type: 'hashtag',
-      shortCode,
-      displayName,
-      replyTxid: tx,
-      shareTxid: tx,
-      rewardTxid: tx,
-      height,
+      shortCode: keyValue.shortCode,
+      displayName: keyValue.displayName,
+      replyTxid: keyValue.tx,
+      shareTxid: keyValue.tx,
+      rewardTxid: keyValue.tx,
+      height: keyValue.height,
       hashtags,
       updateHashtag: this.updateHashtag,
     });
@@ -594,8 +690,15 @@ class HashtagExplore extends React.Component {
     const {hashtags} = this.state;
     const newHashtags = [...hashtags];
     const existingValue = newHashtags[index];
+    const preservedFields = {};
     if (existingValue && existingValue.salePriceText && !keyValue.salePriceText) {
-      keyValue = {...keyValue, salePriceText: existingValue.salePriceText};
+      preservedFields.salePriceText = existingValue.salePriceText;
+    }
+    if (existingValue && existingValue.namespaceInfo && !keyValue.namespaceInfo) {
+      preservedFields.namespaceInfo = existingValue.namespaceInfo;
+    }
+    if (Object.keys(preservedFields).length > 0) {
+      keyValue = {...keyValue, ...preservedFields};
     }
     newHashtags[index] = keyValue;
     this.setState({
