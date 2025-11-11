@@ -34,9 +34,9 @@ import {
   findTxIndex, getNamespaceInfo,
 } from '../../class/keva-ops';
 import Toast from 'react-native-root-toast';
-import { timeConverter, stringToColor, getInitials, SCREEN_WIDTH, } from "../../util";
+import { stringToColor, getInitials, SCREEN_WIDTH, } from "../../util";
 import Biometric from '../../class/biometrics';
-import { extractMedia, getImageGatewayURL, removeMedia } from './mediaManager';
+import { extractMedia, getImageGatewayURL } from './mediaManager';
 import { buildHeadAssetUriCandidates } from '../../common/namespaceAvatar';
 
 const PLAY_ICON  = <MIcon name="play-arrow" size={50} color="#fff"/>;
@@ -257,9 +257,8 @@ class Item extends React.Component {
   }
 
   render() {
-    let {item, onShow, onReply, onShare, onReward, currentHashtag} = this.props;
-    let {thumbnail, avatarCandidateUris, avatarCandidateRequestId, avatarFailedUris, generatedAvatarUri} = this.state;
-    const {mediaCID, mimeType} = extractMedia(item.value);
+    let {item, onShow, currentHashtag} = this.props;
+    let {avatarCandidateUris, avatarCandidateRequestId, avatarFailedUris, generatedAvatarUri} = this.state;
     let displayKey = item.key;
     const {keyType} = parseSpecialKey(item.key);
     if (keyType) {
@@ -315,52 +314,8 @@ class Item extends React.Component {
                 {priceLabel}
               </View>
             </View>
-            {(item.height > 0) ?
-              <Text style={styles.timestamp}>{timeConverter(item.time) + '     ' + loc.namespaces.height + ' ' + item.height}</Text>
-              :
-              <Text style={styles.timestamp}>{loc.general.unconfirmed}</Text>
-            }
-            <Text style={styles.valueDesc} numberOfLines={3} ellipsizeMode="tail">{this.stripHtml(removeMedia(item.value))}</Text>
-            {
-              mediaCID && (
-                mimeType.startsWith('video') ?
-                <View style={{width: 160, height: 120, marginBottom: 5}}>
-                  <Image source={{uri: thumbnail}}
-                    style={styles.previewVideo}
-                  />
-                  <View style={styles.playIcon}>
-                    {PLAY_ICON}
-                  </View>
-                </View>
-                :
-                <Image style={styles.previewImage}
-                  source={{uri: getImageGatewayURL(mediaCID)}}
-                  PlaceholderContent={IMAGE_ICON}
-                  placeholderStyle={{backgroundColor: '#ddd'}}
-                />
-              )
-            }
           </View>
         </TouchableOpacity>
-        <View style={{flexDirection: 'row'}}>
-          <TouchableOpacity onPress={() => onReply(item.tx)} style={{flexDirection: 'row'}}>
-            <MIcon name="chat-bubble-outline" size={22} style={styles.talkIcon} />
-            {(item.replies > 0) && <Text style={styles.count}>{item.replies}</Text>}
-          </TouchableOpacity>
-          <TouchableOpacity onPress={() => onShare(item.tx, item.key, item.value, item.height)} style={{flexDirection: 'row'}}>
-            <MIcon name="cached" size={22} style={styles.shareIcon} />
-            {(item.shares > 0) && <Text style={styles.count}>{item.shares}</Text>}
-          </TouchableOpacity>
-          <TouchableOpacity onPress={() => onReward(item.tx, item.key, item.value, item.height)} style={{flexDirection: 'row'}}>
-            {
-              item.favorite ?
-                <MIcon name="favorite" size={22} style={[styles.shareIcon, {color: KevaColors.favorite}]} />
-              :
-                <MIcon name="favorite-border" size={22} style={styles.shareIcon} />
-            }
-            {(item.likes > 0) && <Text style={styles.count}>{item.likes}</Text> }
-          </TouchableOpacity>
-        </View>
       </View>
     )
   }
