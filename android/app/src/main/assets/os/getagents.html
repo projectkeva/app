@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Get Agents</title>
+<style>
+  :root {
+    --bg: #0b0c0d;
+    --fg: #ffffff;
+    --muted: #9aa0a6;
+    --accent: #59fbea;
+    --accent-2: #28f428;
+    --card: #0f2224;
+    --line: #1f3a3d;
+    --btn: #1a5d57;
+    --btn-edge: #2aa197;
+  }
+
+  html, body {
+    background: var(--bg);
+    color: var(--fg);
+    font-size: 15px;
+    margin: 0;
+    padding: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Noto Sans CJK SC", "Microsoft YaHei", Helvetica, Arial, sans-serif;
+  }
+
+  a { color: var(--accent-2); text-decoration: none; }
+  a:hover { color: yellow; }
+
+  .wrap { min-height: 100vh; width: 100%; display: flex; align-items: flex-start; justify-content: center; }
+
+  .timeline {
+    width: 100%;
+    max-width: 1000px;
+    padding: 48px 20px 80px;
+    position: relative;
+  }
+
+  /* center line */
+  .timeline::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: calc(30% + 16px);
+    bottom: 0;
+    width: 3px;
+    background: var(--line);
+  }
+
+  .entry {
+    clear: both;
+    text-align: left;
+    position: relative;
+    margin-bottom: 26px;
+  }
+
+  .entry .title {
+    float: left;
+    width: 30%;
+    padding-right: 32px;
+    text-align: right;
+    position: relative;
+  }
+
+  .entry .title::before {
+    content: "";
+    position: absolute;
+    width: 10px; height: 10px;
+    background: var(--accent);
+    border: 2px solid #0a2a2a;
+    border-radius: 50%;
+    top: 8px;
+    right: -6px;
+    z-index: 2;
+    box-shadow: 0 0 12px rgba(89,251,234,.45);
+  }
+
+  /* right of the dot: timer + button in a row */
+  .entry .title .live {
+    position: absolute;
+    right: -210px;
+    top: -2px;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(13,32,34,.75);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 2px 8px 2px 8px;
+    white-space: nowrap;
+    backdrop-filter: blur(2px);
+  }
+
+  .entry .title .timer {
+    font-size: 12px;
+    color: var(--accent);
+  }
+
+  .btn {
+    border: 1px solid var(--btn-edge);
+    background: linear-gradient(180deg, var(--btn), #134a45);
+    color: #e7fff9;
+    font-size: 12px;
+    padding: 4px 10px;
+    border-radius: 10px;
+    cursor: pointer;
+  }
+  .btn:hover { filter: brightness(1.05); }
+  .btn:active { transform: translateY(1px); }
+
+  .entry .title h3 {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--fg);
+  }
+
+  .entry .title p {
+    margin: 6px 0 0;
+    font-size: 13px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: .5px;
+  }
+
+  .entry .body {
+    float: right;
+    width: 66%;
+    padding-left: 32px;
+  }
+
+  .card {
+    background: linear-gradient(180deg, rgba(13,32,34,.95), rgba(10,25,27,.95));
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 14px 16px;
+    box-shadow: 0 10px 30px rgba(0,0,0,.25);
+  }
+
+  .card h4 { display:none; } /* 示例部分留空，不显示标题 */
+
+  .content { min-height: 8px; } /* 占位，保持卡片高度 */
+
+  .meta { font-size: 12px; color: var(--muted); margin-top: 10px; }
+
+  hr.sep {
+    border: none;
+    border-top: 1px dashed var(--line);
+    margin: 10px 0;
+  }
+
+  .clearfix::after { content: ""; display: table; clear: both; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="timeline">
+
+    <div class="entry clearfix">
+      <div class="title">
+        <h3>2025-11-11 15:32</h3>
+        <div class="live">
+          <span class="timer" aria-label="countdown based on left time">⏳ 00:00</span>
+          <a href="#" class="btn btn-get">Get Agents</a>
+        </div>
+        <p>BLOCK 1450555</p>
+      </div>
+      <div class="body">
+        <div class="card">
+          <div class="content"></div>
+          <hr class="sep" />
+          <div class="meta">More...</div>
+        </div>
+      </div>
+    </div>
+    
+    <div class="entry clearfix">
+      <div class="title">
+        <h3>2025-11-11 15:33</h3>
+        <div class="live">
+          <span class="timer" aria-label="countdown based on left time">⏳ 00:00</span>
+          <a href="#" class="btn btn-get">Get Agents</a>
+        </div>
+        <p>BLOCK 1450556</p>
+      </div>
+      <div class="body">
+        <div class="card">
+          <div class="content"></div>
+          <hr class="sep" />
+          <div class="meta">More...</div>
+        </div>
+      </div>
+    </div>
+    
+    <div class="entry clearfix">
+      <div class="title">
+        <h3>2025-11-11 15:34</h3>
+        <div class="live">
+          <span class="timer" aria-label="countdown based on left time">⏳ 00:00</span>
+          <a href="#" class="btn btn-get">Get Agents</a>
+        </div>
+        <p>BLOCK 1450557</p>
+      </div>
+      <div class="body">
+        <div class="card">
+          <div class="content"></div>
+          <hr class="sep" />
+          <div class="meta">More...</div>
+        </div>
+      </div>
+    </div>
+    
+    <div class="entry clearfix">
+      <div class="title">
+        <h3>2025-11-11 15:35</h3>
+        <div class="live">
+          <span class="timer" aria-label="countdown based on left time">⏳ 00:00</span>
+          <a href="#" class="btn btn-get">Get Agents</a>
+        </div>
+        <p>BLOCK 1450558</p>
+      </div>
+      <div class="body">
+        <div class="card">
+          <div class="content"></div>
+          <hr class="sep" />
+          <div class="meta">More...</div>
+        </div>
+      </div>
+    </div>
+    
+    <div class="entry clearfix">
+      <div class="title">
+        <h3>2025-11-11 15:36</h3>
+        <div class="live">
+          <span class="timer" aria-label="countdown based on left time">⏳ 00:00</span>
+          <a href="#" class="btn btn-get">Get Agents</a>
+        </div>
+        <p>BLOCK 1450559</p>
+      </div>
+      <div class="body">
+        <div class="card">
+          <div class="content"></div>
+          <hr class="sep" />
+          <div class="meta">More...</div>
+        </div>
+      </div>
+    </div>
+    
+    <div class="entry clearfix">
+      <div class="title">
+        <h3>2025-11-11 15:37</h3>
+        <div class="live">
+          <span class="timer" aria-label="countdown based on left time">⏳ 00:00</span>
+          <a href="#" class="btn btn-get">Get Agents</a>
+        </div>
+        <p>BLOCK 1450560</p>
+      </div>
+      <div class="body">
+        <div class="card">
+          <div class="content"></div>
+          <hr class="sep" />
+          <div class="meta">More...</div>
+        </div>
+      </div>
+    </div>
+    
+    <div class="entry clearfix">
+      <div class="title">
+        <h3>2025-11-11 15:38</h3>
+        <div class="live">
+          <span class="timer" aria-label="countdown based on left time">⏳ 00:00</span>
+          <a href="#" class="btn btn-get">Get Agents</a>
+        </div>
+        <p>BLOCK 1450561</p>
+      </div>
+      <div class="body">
+        <div class="card">
+          <div class="content"></div>
+          <hr class="sep" />
+          <div class="meta">More...</div>
+        </div>
+      </div>
+    </div>
+    
+    <div class="entry clearfix">
+      <div class="title">
+        <h3>2025-11-11 15:39</h3>
+        <div class="live">
+          <span class="timer" aria-label="countdown based on left time">⏳ 00:00</span>
+          <a href="#" class="btn btn-get">Get Agents</a>
+        </div>
+        <p>BLOCK 1450562</p>
+      </div>
+      <div class="body">
+        <div class="card">
+          <div class="content"></div>
+          <hr class="sep" />
+          <div class="meta">More...</div>
+        </div>
+      </div>
+    </div>
+    
+    <div class="entry clearfix">
+      <div class="title">
+        <h3>2025-11-11 15:40</h3>
+        <div class="live">
+          <span class="timer" aria-label="countdown based on left time">⏳ 00:00</span>
+          <a href="#" class="btn btn-get">Get Agents</a>
+        </div>
+        <p>BLOCK 1450563</p>
+      </div>
+      <div class="body">
+        <div class="card">
+          <div class="content"></div>
+          <hr class="sep" />
+          <div class="meta">More...</div>
+        </div>
+      </div>
+    </div>
+    
+    <div class="entry clearfix">
+      <div class="title">
+        <h3>2025-11-11 15:41</h3>
+        <div class="live">
+          <span class="timer" aria-label="countdown based on left time">⏳ 00:00</span>
+          <a href="#" class="btn btn-get">Get Agents</a>
+        </div>
+        <p>BLOCK 1450564</p>
+      </div>
+      <div class="body">
+        <div class="card">
+          <div class="content"></div>
+          <hr class="sep" />
+          <div class="meta">More...</div>
+        </div>
+      </div>
+    </div>
+    
+    <div class="entry clearfix">
+      <div class="title">
+        <h3>2025-11-11 15:42</h3>
+        <div class="live">
+          <span class="timer" aria-label="countdown based on left time">⏳ 00:00</span>
+          <a href="#" class="btn btn-get">Get Agents</a>
+        </div>
+        <p>BLOCK 1450565</p>
+      </div>
+      <div class="body">
+        <div class="card">
+          <div class="content"></div>
+          <hr class="sep" />
+          <div class="meta">More...</div>
+        </div>
+      </div>
+    </div>
+    
+    <div class="entry clearfix">
+      <div class="title">
+        <h3>2025-11-11 15:43</h3>
+        <div class="live">
+          <span class="timer" aria-label="countdown based on left time">⏳ 00:00</span>
+          <a href="#" class="btn btn-get">Get Agents</a>
+        </div>
+        <p>BLOCK 1450566</p>
+      </div>
+      <div class="body">
+        <div class="card">
+          <div class="content"></div>
+          <hr class="sep" />
+          <div class="meta">More...</div>
+        </div>
+      </div>
+    </div>
+    
+    <div class="entry clearfix">
+      <div class="title">
+        <h3>2025-11-11 15:44</h3>
+        <div class="live">
+          <span class="timer" aria-label="countdown based on left time">⏳ 00:00</span>
+          <a href="#" class="btn btn-get">Get Agents</a>
+        </div>
+        <p>BLOCK 1450567</p>
+      </div>
+      <div class="body">
+        <div class="card">
+          <div class="content"></div>
+          <hr class="sep" />
+          <div class="meta">More...</div>
+        </div>
+      </div>
+    </div>
+    
+    <div class="entry clearfix">
+      <div class="title">
+        <h3>2025-11-11 15:45</h3>
+        <div class="live">
+          <span class="timer" aria-label="countdown based on left time">⏳ 00:00</span>
+          <a href="#" class="btn btn-get">Get Agents</a>
+        </div>
+        <p>BLOCK 1450568</p>
+      </div>
+      <div class="body">
+        <div class="card">
+          <div class="content"></div>
+          <hr class="sep" />
+          <div class="meta">More...</div>
+        </div>
+      </div>
+    </div>
+    
+    <div class="entry clearfix">
+      <div class="title">
+        <h3>2025-11-11 15:46</h3>
+        <div class="live">
+          <span class="timer" aria-label="countdown based on left time">⏳ 00:00</span>
+          <a href="#" class="btn btn-get">Get Agents</a>
+        </div>
+        <p>BLOCK 1450569</p>
+      </div>
+      <div class="body">
+        <div class="card">
+          <div class="content"></div>
+          <hr class="sep" />
+          <div class="meta">More...</div>
+        </div>
+      </div>
+    </div>
+    
+  </div>
+</div>
+
+<script>
+// 读取每个 entry 左侧 h3 的时间作为 base（补秒 :00），倒计时至 base+60s，过期则 00:00。
+function parseBaseTime(text) {
+  const parts = text.trim().split(/\s+/);
+  if (parts.length < 2) return null;
+  const dateStr = parts[0];
+  const hm = parts[1] + ':00';
+  const d = new Date(dateStr + 'T' + hm);
+  if (isNaN(d.getTime())) return null;
+  return d;
+}
+
+function updateTimers() {
+  const now = new Date();
+  document.querySelectorAll('.entry').forEach(entry => {
+    const h3 = entry.querySelector('.title h3');
+    const timerEl = entry.querySelector('.timer');
+    if (!h3 || !timerEl) return;
+    const base = parseBaseTime(h3.textContent);
+    if (!base) return;
+    const target = new Date(base.getTime() + 60 * 1000);
+    let diff = target - now;
+    if (diff < 0) diff = 0;
+    const mm = String(Math.floor(diff / 60000)).padStart(2, '0');
+    const ss = String(Math.floor((diff % 60000) / 1000)).padStart(2, '0');
+    timerEl.textContent = '⏳ ' + mm + ':' + ss;
+  });
+}
+setInterval(updateTimers, 200);
+updateTimers();
+
+// Get Agents 点击动作：可替换为跳转
+document.querySelectorAll('.btn-get').forEach(btn => {
+  btn.addEventListener('click', (e) => {
+    e.preventDefault();
+    const entry = e.target.closest('.entry');
+    const block = entry?.querySelector('.title p')?.textContent?.trim() || 'BLOCK ?';
+    alert('Get Agents @ ' + block);
+  });
+});
+</script>
+
+</body>
+</html>
