@@ -24,7 +24,7 @@ import FloatTextInput from '../../common/FloatTextInput';
 import StepModal from "../../common/StepModalWizard";
 import Biometric from '../../class/biometrics';
 
-const SELL_HASHTAG = '#xkevasell';
+const SELL_HASHTAG = '#NFTs';
 
 class SellNFT extends React.Component {
 
@@ -166,7 +166,7 @@ class SellNFT extends React.Component {
     if (typeof desc !== 'string') {
       return SELL_HASHTAG;
     }
-    if (desc.toLowerCase().includes(SELL_HASHTAG)) {
+    if (desc.toLowerCase().includes(SELL_HASHTAG.toLowerCase())) {
       return desc;
     }
     const trimmedDesc = desc.trimEnd();
