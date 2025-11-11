@@ -515,7 +515,7 @@ class HashtagExplore extends React.Component {
 
       }
 
-      const ownership = this.resolveNamespaceOwnership(namespaceId, namespaceInfo, cachedEntry);
+      const ownership = this.resolveNamespaceOwnership(namespaceId, namespaceInfo, cachedEntry, keyValue.shortCode);
       const namespaceInfoToStore =
         namespaceInfo ||
         (cachedEntry && typeof cachedEntry === 'object' && cachedEntry.namespaceInfo) ||
@@ -602,11 +602,21 @@ class HashtagExplore extends React.Component {
     this.refreshKeyValues();
   }
 
-  resolveNamespaceOwnership = (namespaceId, namespaceInfo = null, cachedEntry = null) => {
+  resolveNamespaceOwnership = (namespaceId, namespaceInfo = null, cachedEntry = null, fallbackShortCode = null) => {
     const { namespaceList } = this.props;
     const namespaces = (namespaceList && namespaceList.namespaces) || {};
-    const directEntry = namespaces ? namespaces[namespaceId] : null;
-    let walletId = directEntry && directEntry.walletId ? directEntry.walletId : null;
+    let namespaceEntry = namespaces ? namespaces[namespaceId] : null;
+    if (!namespaceEntry && fallbackShortCode) {
+      const targetShortCode = fallbackShortCode.toString().toLowerCase();
+      namespaceEntry = Object.values(namespaces).find(entry => {
+        if (!entry) {
+          return false;
+        }
+        const entryShortCode = (entry.shortCode || '').toString().toLowerCase();
+        return entryShortCode === targetShortCode;
+      }) || null;
+    }
+    let walletId = namespaceEntry && namespaceEntry.walletId ? namespaceEntry.walletId : null;
 
     const fallbackCache = cachedEntry || (this.state && this.state.saleStatusCache && this.state.saleStatusCache[namespaceId]);
     let resolvedNamespaceInfo = namespaceInfo || null;
@@ -619,8 +629,8 @@ class HashtagExplore extends React.Component {
 
     if (!walletId) {
       const addrCandidates = [];
-      if (directEntry && directEntry.addr) {
-        addrCandidates.push(directEntry.addr);
+      if (namespaceEntry && namespaceEntry.addr) {
+        addrCandidates.push(namespaceEntry.addr);
       }
       if (resolvedNamespaceInfo && resolvedNamespaceInfo.addr) {
         addrCandidates.push(resolvedNamespaceInfo.addr);
@@ -655,7 +665,7 @@ class HashtagExplore extends React.Component {
 
     return {
       walletId: walletId || null,
-      namespaceEntry: directEntry || null,
+      namespaceEntry: namespaceEntry || null,
       namespaceInfo: resolvedNamespaceInfo || null,
     };
   }
@@ -713,7 +723,7 @@ class HashtagExplore extends React.Component {
         }
       }
 
-      const ownership = this.resolveNamespaceOwnership(namespaceId, namespaceInfo, saleStatusCache[namespaceId]);
+      const ownership = this.resolveNamespaceOwnership(namespaceId, namespaceInfo, saleStatusCache[namespaceId], keyValue.shortCode);
       const ownerWalletId = ownership.walletId;
       const mergedNamespaceInfo = {
         ...(ownership.namespaceEntry || namespaceEntry || {}),
