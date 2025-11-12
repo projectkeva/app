@@ -187,8 +187,29 @@
     min-height: 64px;
   }
 
+  .avatar-item.avatar-load-more {
+    cursor: pointer;
+    justify-content: center;
+    transition: transform .15s ease;
+  }
+
+  .avatar-item.avatar-load-more:active {
+    transform: translateY(1px) scale(0.98);
+  }
+
+  .avatar-item.avatar-load-more:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
   .avatar-item.avatar-missing {
     opacity: .45;
+  }
+
+  .avatar-load-more-icon {
+    font-size: 30px;
+    line-height: 1;
+    color: var(--accent);
   }
 
   .avatar-sprite {
@@ -297,6 +318,7 @@ let hasRenderedTimeline = false;
 let hasTriggeredDirectFallback = false;
 let galleryRenderToken = 0;
 const galleryRenderMap = new Map();
+const galleryStateMap = new Map();
 
 let baseBlockHeight = null;
 let baseBlockDate = null;
@@ -306,7 +328,8 @@ let isLoadingMore = false;
 const INITIAL_BATCH_COUNT = 11; // current block + 10 future blocks
 const LOAD_MORE_BATCH_COUNT = 10;
 
-const AVATAR_COUNT = 10; // 0 through 9 inclusive
+const INITIAL_AVATAR_COUNT = 7; // indices 0 through 6 inclusive
+const AVATAR_BATCH_COUNT = 8;
 const AGENT_SEED_SUFFIX = 'projectkeva';
 const AGENT_HEAD_POOL = 1000n;
 const AGENT_CLOTH_POOL = 500n;
@@ -558,17 +581,70 @@ function createAvatarElement(profile) {
   return wrapper;
 }
 
-async function populateAgentGalleryForBlock(gallery, blockHeight) {
-  if (!gallery) {
+function removeLoadMoreControl(gallery) {
+  const existing = gallery.querySelector('.avatar-load-more');
+  if (existing) {
+    existing.remove();
+  }
+}
+
+function clearGalleryStatusElements(gallery) {
+  Array.from(gallery.querySelectorAll('.avatar-loading, .avatar-error')).forEach((el) => el.remove());
+}
+
+function addLoadMoreControl(gallery, token) {
+  const state = galleryStateMap.get(gallery);
+  if (!state || state.token !== token) {
     return;
   }
 
-  const token = ++galleryRenderToken;
-  galleryRenderMap.set(gallery, token);
-  gallery.innerHTML = '<div class="avatar-loading">正在生成头像…</div>';
+  const loadMore = document.createElement('div');
+  loadMore.className = 'avatar-item avatar-load-more';
+  loadMore.setAttribute('role', 'button');
+  loadMore.setAttribute('tabindex', '0');
+  loadMore.setAttribute('aria-label', '加载更多头像');
+
+  const icon = document.createElement('div');
+  icon.className = 'avatar-load-more-icon';
+  icon.textContent = '+';
+  loadMore.appendChild(icon);
+
+  const activate = (event) => {
+    if (event) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+    handleLoadMoreRequest(gallery);
+  };
+
+  loadMore.addEventListener('click', activate);
+  loadMore.addEventListener('keypress', (event) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      activate(event);
+    }
+  });
+
+  gallery.appendChild(loadMore);
+}
+
+async function loadAvatarBatch(gallery, blockHeight, token, startIndex, count) {
+  const state = galleryStateMap.get(gallery);
+  if (!state || state.token !== token || state.loading) {
+    return;
+  }
+
+  state.loading = true;
+  removeLoadMoreControl(gallery);
+  clearGalleryStatusElements(gallery);
+
+  const loader = document.createElement('div');
+  loader.className = 'avatar-loading';
+  loader.textContent = '正在生成头像…';
+  gallery.appendChild(loader);
+
+  const indices = Array.from({ length: count }, (_, i) => startIndex + i);
 
   try {
-    const indices = Array.from({ length: AVATAR_COUNT }, (_, i) => i);
     const results = await Promise.all(
       indices.map((index) =>
         generateAgentProfile(blockHeight, index)
@@ -576,10 +652,14 @@ async function populateAgentGalleryForBlock(gallery, blockHeight) {
           .catch((error) => ({ ok: false, error, index }))
       )
     );
+
     if (galleryRenderMap.get(gallery) !== token) {
+      loader.remove();
       return;
     }
-    gallery.innerHTML = '';
+
+    loader.remove();
+
     let successCount = 0;
     results.forEach((result) => {
       if (result.ok && result.profile) {
@@ -601,15 +681,59 @@ async function populateAgentGalleryForBlock(gallery, blockHeight) {
         gallery.appendChild(fallback);
       }
     });
+
     if (successCount === 0) {
-      gallery.innerHTML = '<div class="avatar-error">无法生成代理头像，请稍后重试。</div>';
+      const errorEl = document.createElement('div');
+      errorEl.className = 'avatar-error';
+      errorEl.textContent = startIndex === 0 ? '无法生成代理头像，请稍后重试。' : '无法加载更多头像，请稍后重试。';
+      gallery.appendChild(errorEl);
+      state.loading = false;
+      return;
     }
+
+    state.nextIndex = startIndex + count;
+    addLoadMoreControl(gallery, token);
   } catch (error) {
     console.error('Failed to generate agent avatars', error);
+    loader.remove();
     if (galleryRenderMap.get(gallery) === token) {
-      gallery.innerHTML = '<div class="avatar-error">无法生成代理头像，请稍后重试。</div>';
+      const errorEl = document.createElement('div');
+      errorEl.className = 'avatar-error';
+      errorEl.textContent = startIndex === 0 ? '无法生成代理头像，请稍后重试。' : '无法加载更多头像，请稍后重试。';
+      gallery.appendChild(errorEl);
+    }
+  } finally {
+    const latestState = galleryStateMap.get(gallery);
+    if (latestState && latestState.token === token) {
+      latestState.loading = false;
     }
   }
+}
+
+function handleLoadMoreRequest(gallery) {
+  const state = galleryStateMap.get(gallery);
+  if (!state || state.loading) {
+    return;
+  }
+  loadAvatarBatch(gallery, state.blockHeight, state.token, state.nextIndex, AVATAR_BATCH_COUNT);
+}
+
+async function populateAgentGalleryForBlock(gallery, blockHeight) {
+  if (!gallery) {
+    return;
+  }
+
+  const token = ++galleryRenderToken;
+  galleryRenderMap.set(gallery, token);
+  galleryStateMap.set(gallery, {
+    blockHeight,
+    nextIndex: 0,
+    token,
+    loading: false,
+  });
+  gallery.innerHTML = '';
+
+  await loadAvatarBatch(gallery, blockHeight, token, 0, INITIAL_AVATAR_COUNT);
 }
 
 function populateAgentGalleries(targets) {
@@ -704,6 +828,7 @@ function resetTimeline(baseHeight, baseDate) {
   entriesLoaded = 0;
   timelineEl.innerHTML = '';
   galleryRenderMap.clear();
+  galleryStateMap.clear();
   appendMoreEntries(INITIAL_BATCH_COUNT);
   isLoadingMore = false;
 }
@@ -715,6 +840,7 @@ function showStatus(message, isError = false) {
   entriesLoaded = 0;
   isLoadingMore = false;
   galleryRenderMap.clear();
+  galleryStateMap.clear();
   timelineEl.innerHTML = '';
   const statusEl = document.createElement('div');
   statusEl.id = STATUS_ID;
