@@ -15,6 +15,7 @@
     --line: #1f3a3d;
     --btn: #1a5d57;
     --btn-edge: #2aa197;
+    --error: #ff6b6b;
   }
 
   html, body {
@@ -47,6 +48,18 @@
     bottom: 0;
     width: 3px;
     background: var(--line);
+  }
+
+  .status {
+    text-align: center;
+    color: var(--muted);
+    margin: 0 auto 32px;
+    max-width: 420px;
+    line-height: 1.6;
+  }
+
+  .status.error {
+    color: var(--error);
   }
 
   .entry {
@@ -139,9 +152,9 @@
     box-shadow: 0 10px 30px rgba(0,0,0,.25);
   }
 
-  .card h4 { display:none; } /* 示例部分留空，不显示标题 */
+  .card h4 { display:none; }
 
-  .content { min-height: 8px; } /* 占位，保持卡片高度 */
+  .content { min-height: 8px; font-size: 13px; color: var(--fg); }
 
   .meta { font-size: 12px; color: var(--muted); margin-top: 10px; }
 
@@ -156,283 +169,111 @@
 </head>
 <body>
 <div class="wrap">
-  <div class="timeline">
-
-    <div class="entry clearfix">
-      <div class="title">
-        <h3>2025-11-11 15:32</h3>
-        <div class="live">
-          <span class="timer" aria-label="countdown based on left time">⏳ 00:00</span>
-          <a href="#" class="btn btn-get">Get Agents</a>
-        </div>
-        <p>BLOCK 1450555</p>
-      </div>
-      <div class="body">
-        <div class="card">
-          <div class="content"></div>
-          <hr class="sep" />
-          <div class="meta">More...</div>
-        </div>
-      </div>
-    </div>
-    
-    <div class="entry clearfix">
-      <div class="title">
-        <h3>2025-11-11 15:33</h3>
-        <div class="live">
-          <span class="timer" aria-label="countdown based on left time">⏳ 00:00</span>
-          <a href="#" class="btn btn-get">Get Agents</a>
-        </div>
-        <p>BLOCK 1450556</p>
-      </div>
-      <div class="body">
-        <div class="card">
-          <div class="content"></div>
-          <hr class="sep" />
-          <div class="meta">More...</div>
-        </div>
-      </div>
-    </div>
-    
-    <div class="entry clearfix">
-      <div class="title">
-        <h3>2025-11-11 15:34</h3>
-        <div class="live">
-          <span class="timer" aria-label="countdown based on left time">⏳ 00:00</span>
-          <a href="#" class="btn btn-get">Get Agents</a>
-        </div>
-        <p>BLOCK 1450557</p>
-      </div>
-      <div class="body">
-        <div class="card">
-          <div class="content"></div>
-          <hr class="sep" />
-          <div class="meta">More...</div>
-        </div>
-      </div>
-    </div>
-    
-    <div class="entry clearfix">
-      <div class="title">
-        <h3>2025-11-11 15:35</h3>
-        <div class="live">
-          <span class="timer" aria-label="countdown based on left time">⏳ 00:00</span>
-          <a href="#" class="btn btn-get">Get Agents</a>
-        </div>
-        <p>BLOCK 1450558</p>
-      </div>
-      <div class="body">
-        <div class="card">
-          <div class="content"></div>
-          <hr class="sep" />
-          <div class="meta">More...</div>
-        </div>
-      </div>
-    </div>
-    
-    <div class="entry clearfix">
-      <div class="title">
-        <h3>2025-11-11 15:36</h3>
-        <div class="live">
-          <span class="timer" aria-label="countdown based on left time">⏳ 00:00</span>
-          <a href="#" class="btn btn-get">Get Agents</a>
-        </div>
-        <p>BLOCK 1450559</p>
-      </div>
-      <div class="body">
-        <div class="card">
-          <div class="content"></div>
-          <hr class="sep" />
-          <div class="meta">More...</div>
-        </div>
-      </div>
-    </div>
-    
-    <div class="entry clearfix">
-      <div class="title">
-        <h3>2025-11-11 15:37</h3>
-        <div class="live">
-          <span class="timer" aria-label="countdown based on left time">⏳ 00:00</span>
-          <a href="#" class="btn btn-get">Get Agents</a>
-        </div>
-        <p>BLOCK 1450560</p>
-      </div>
-      <div class="body">
-        <div class="card">
-          <div class="content"></div>
-          <hr class="sep" />
-          <div class="meta">More...</div>
-        </div>
-      </div>
-    </div>
-    
-    <div class="entry clearfix">
-      <div class="title">
-        <h3>2025-11-11 15:38</h3>
-        <div class="live">
-          <span class="timer" aria-label="countdown based on left time">⏳ 00:00</span>
-          <a href="#" class="btn btn-get">Get Agents</a>
-        </div>
-        <p>BLOCK 1450561</p>
-      </div>
-      <div class="body">
-        <div class="card">
-          <div class="content"></div>
-          <hr class="sep" />
-          <div class="meta">More...</div>
-        </div>
-      </div>
-    </div>
-    
-    <div class="entry clearfix">
-      <div class="title">
-        <h3>2025-11-11 15:39</h3>
-        <div class="live">
-          <span class="timer" aria-label="countdown based on left time">⏳ 00:00</span>
-          <a href="#" class="btn btn-get">Get Agents</a>
-        </div>
-        <p>BLOCK 1450562</p>
-      </div>
-      <div class="body">
-        <div class="card">
-          <div class="content"></div>
-          <hr class="sep" />
-          <div class="meta">More...</div>
-        </div>
-      </div>
-    </div>
-    
-    <div class="entry clearfix">
-      <div class="title">
-        <h3>2025-11-11 15:40</h3>
-        <div class="live">
-          <span class="timer" aria-label="countdown based on left time">⏳ 00:00</span>
-          <a href="#" class="btn btn-get">Get Agents</a>
-        </div>
-        <p>BLOCK 1450563</p>
-      </div>
-      <div class="body">
-        <div class="card">
-          <div class="content"></div>
-          <hr class="sep" />
-          <div class="meta">More...</div>
-        </div>
-      </div>
-    </div>
-    
-    <div class="entry clearfix">
-      <div class="title">
-        <h3>2025-11-11 15:41</h3>
-        <div class="live">
-          <span class="timer" aria-label="countdown based on left time">⏳ 00:00</span>
-          <a href="#" class="btn btn-get">Get Agents</a>
-        </div>
-        <p>BLOCK 1450564</p>
-      </div>
-      <div class="body">
-        <div class="card">
-          <div class="content"></div>
-          <hr class="sep" />
-          <div class="meta">More...</div>
-        </div>
-      </div>
-    </div>
-    
-    <div class="entry clearfix">
-      <div class="title">
-        <h3>2025-11-11 15:42</h3>
-        <div class="live">
-          <span class="timer" aria-label="countdown based on left time">⏳ 00:00</span>
-          <a href="#" class="btn btn-get">Get Agents</a>
-        </div>
-        <p>BLOCK 1450565</p>
-      </div>
-      <div class="body">
-        <div class="card">
-          <div class="content"></div>
-          <hr class="sep" />
-          <div class="meta">More...</div>
-        </div>
-      </div>
-    </div>
-    
-    <div class="entry clearfix">
-      <div class="title">
-        <h3>2025-11-11 15:43</h3>
-        <div class="live">
-          <span class="timer" aria-label="countdown based on left time">⏳ 00:00</span>
-          <a href="#" class="btn btn-get">Get Agents</a>
-        </div>
-        <p>BLOCK 1450566</p>
-      </div>
-      <div class="body">
-        <div class="card">
-          <div class="content"></div>
-          <hr class="sep" />
-          <div class="meta">More...</div>
-        </div>
-      </div>
-    </div>
-    
-    <div class="entry clearfix">
-      <div class="title">
-        <h3>2025-11-11 15:44</h3>
-        <div class="live">
-          <span class="timer" aria-label="countdown based on left time">⏳ 00:00</span>
-          <a href="#" class="btn btn-get">Get Agents</a>
-        </div>
-        <p>BLOCK 1450567</p>
-      </div>
-      <div class="body">
-        <div class="card">
-          <div class="content"></div>
-          <hr class="sep" />
-          <div class="meta">More...</div>
-        </div>
-      </div>
-    </div>
-    
-    <div class="entry clearfix">
-      <div class="title">
-        <h3>2025-11-11 15:45</h3>
-        <div class="live">
-          <span class="timer" aria-label="countdown based on left time">⏳ 00:00</span>
-          <a href="#" class="btn btn-get">Get Agents</a>
-        </div>
-        <p>BLOCK 1450568</p>
-      </div>
-      <div class="body">
-        <div class="card">
-          <div class="content"></div>
-          <hr class="sep" />
-          <div class="meta">More...</div>
-        </div>
-      </div>
-    </div>
-    
-    <div class="entry clearfix">
-      <div class="title">
-        <h3>2025-11-11 15:46</h3>
-        <div class="live">
-          <span class="timer" aria-label="countdown based on left time">⏳ 00:00</span>
-          <a href="#" class="btn btn-get">Get Agents</a>
-        </div>
-        <p>BLOCK 1450569</p>
-      </div>
-      <div class="body">
-        <div class="card">
-          <div class="content"></div>
-          <hr class="sep" />
-          <div class="meta">More...</div>
-        </div>
-      </div>
-    </div>
-    
+  <div class="timeline" id="timeline">
+    <div class="status" id="status">正在读取最新区块信息…</div>
   </div>
 </div>
 
 <script>
-// 读取每个 entry 左侧 h3 的时间作为 base（补秒 :00），倒计时至 base+60s，过期则 00:00。
+const API_URL = 'https://mempool.space/api/blocks?limit=1';
+const timelineEl = document.getElementById('timeline');
+const STATUS_ID = 'status';
+
+function formatDateTime(date) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  const hh = String(date.getHours()).padStart(2, '0');
+  const mm = String(date.getMinutes()).padStart(2, '0');
+  return `${y}-${m}-${d} ${hh}:${mm}`;
+}
+
+function formatMeta(date) {
+  const hh = String(date.getHours()).padStart(2, '0');
+  const mm = String(date.getMinutes()).padStart(2, '0');
+  const ss = String(date.getSeconds()).padStart(2, '0');
+  return `本地时间 ${hh}:${mm}:${ss}`;
+}
+
+function buildEntry(height, date, baseHeight) {
+  const entry = document.createElement('div');
+  entry.className = 'entry clearfix';
+
+  const offset = height - baseHeight;
+  let offsetLabel = '当前区块';
+  if (offset > 0) {
+    offsetLabel = `未来区块 +${offset}`;
+  } else if (offset < 0) {
+    offsetLabel = `历史区块 ${offset}`;
+  }
+
+  entry.innerHTML = `
+    <div class="title">
+      <h3>${formatDateTime(date)}</h3>
+      <div class="live">
+        <span class="timer" aria-label="countdown based on left time">⏳ 00:00</span>
+        <a href="#" class="btn btn-get">Get Agents</a>
+      </div>
+      <p>BLOCK ${height}</p>
+    </div>
+    <div class="body">
+      <div class="card">
+        <div class="content">${offsetLabel}</div>
+        <hr class="sep" />
+        <div class="meta">${formatMeta(date)}</div>
+      </div>
+    </div>
+  `;
+
+  return entry;
+}
+
+function renderEntries(baseHeight, baseDate) {
+  const fragment = document.createDocumentFragment();
+  for (let i = 0; i < 30; i++) {
+    const height = baseHeight - 1 + i;
+    const date = new Date(baseDate.getTime() + (i - 1) * 2 * 60 * 1000);
+    fragment.appendChild(buildEntry(height, date, baseHeight));
+  }
+
+  timelineEl.innerHTML = '';
+  timelineEl.appendChild(fragment);
+  updateTimers();
+}
+
+function showStatus(message, isError = false) {
+  timelineEl.innerHTML = '';
+  const statusEl = document.createElement('div');
+  statusEl.id = STATUS_ID;
+  statusEl.className = 'status' + (isError ? ' error' : '');
+  statusEl.textContent = message;
+  timelineEl.appendChild(statusEl);
+}
+
+async function loadTimeline() {
+  showStatus('正在读取最新区块信息…');
+  try {
+    const response = await fetch(API_URL);
+    if (!response.ok) {
+      throw new Error(`Network response was not ok (${response.status})`);
+    }
+    const blocks = await response.json();
+    if (!Array.isArray(blocks) || blocks.length === 0) {
+      throw new Error('Empty block data');
+    }
+    const latest = blocks[0];
+    const baseHeight = Number(latest.height);
+    const baseDate = new Date(Number(latest.timestamp) * 1000);
+    if (!Number.isFinite(baseHeight) || Number.isNaN(baseDate.getTime())) {
+      throw new Error('Invalid block payload');
+    }
+    renderEntries(baseHeight, baseDate);
+  } catch (error) {
+    console.error('Failed to load block data', error);
+    showStatus('无法加载区块信息，请稍后重试。', true);
+  }
+}
+
 function parseBaseTime(text) {
   const parts = text.trim().split(/\s+/);
   if (parts.length < 2) return null;
@@ -459,17 +300,17 @@ function updateTimers() {
     timerEl.textContent = '⏳ ' + mm + ':' + ss;
   });
 }
-setInterval(updateTimers, 200);
-updateTimers();
 
-// Get Agents 点击动作：可替换为跳转
-document.querySelectorAll('.btn-get').forEach(btn => {
-  btn.addEventListener('click', (e) => {
-    e.preventDefault();
-    const entry = e.target.closest('.entry');
-    const block = entry?.querySelector('.title p')?.textContent?.trim() || 'BLOCK ?';
-    alert('Get Agents @ ' + block);
-  });
+setInterval(updateTimers, 200);
+loadTimeline();
+
+timelineEl.addEventListener('click', (event) => {
+  const btn = event.target.closest('.btn-get');
+  if (!btn) return;
+  event.preventDefault();
+  const entry = btn.closest('.entry');
+  const block = entry?.querySelector('.title p')?.textContent?.trim() || 'BLOCK ?';
+  alert('Get Agents @ ' + block);
 });
 </script>
 
