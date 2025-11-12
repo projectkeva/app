@@ -169,8 +169,8 @@
 
   .avatar-gallery {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
-    gap: 14px;
+    grid-template-columns: repeat(auto-fit, minmax(48px, 1fr));
+    gap: 7px;
     width: 100%;
   }
 
@@ -178,13 +178,13 @@
     background: rgba(9, 25, 27, 0.9);
     border: 1px solid var(--line);
     border-radius: 12px;
-    padding: 10px 10px 12px;
+    padding: 5px 5px 6px;
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
     box-shadow: 0 6px 18px rgba(0, 0, 0, .25);
-    min-height: 128px;
+    min-height: 64px;
   }
 
   .avatar-item.avatar-missing {
@@ -216,10 +216,10 @@
   }
 
   .avatar-id {
-    margin-top: 10px;
-    font-size: 11px;
+    margin-top: 5px;
+    font-size: 6px;
     color: var(--muted);
-    letter-spacing: 0.6px;
+    letter-spacing: 0.3px;
     text-transform: uppercase;
   }
 
@@ -248,17 +248,17 @@
 
   @media (max-width: 680px) {
     .avatar-gallery {
-      grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
-      gap: 12px;
+      grid-template-columns: repeat(auto-fit, minmax(40px, 1fr));
+      gap: 6px;
     }
 
     .avatar-item {
-      min-height: 118px;
-      padding: 8px 8px 10px;
+      min-height: 56px;
+      padding: 4px 4px 5px;
     }
 
     .avatar-id {
-      font-size: 10px;
+      font-size: 5px;
     }
   }
 
@@ -306,7 +306,7 @@ let isLoadingMore = false;
 const INITIAL_BATCH_COUNT = 11; // current block + 10 future blocks
 const LOAD_MORE_BATCH_COUNT = 10;
 
-const AVATAR_COUNT = 21; // 0 through 20 inclusive
+const AVATAR_COUNT = 10; // 0 through 9 inclusive
 const AGENT_SEED_SUFFIX = 'projectkeva';
 const AGENT_HEAD_POOL = 1000n;
 const AGENT_CLOTH_POOL = 500n;
