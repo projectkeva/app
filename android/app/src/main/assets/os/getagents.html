@@ -298,6 +298,14 @@ let hasTriggeredDirectFallback = false;
 let galleryRenderToken = 0;
 const galleryRenderMap = new Map();
 
+let baseBlockHeight = null;
+let baseBlockDate = null;
+let entriesLoaded = 0;
+let isLoadingMore = false;
+
+const INITIAL_BATCH_COUNT = 11; // current block + 10 future blocks
+const LOAD_MORE_BATCH_COUNT = 10;
+
 const AVATAR_COUNT = 21; // 0 through 20 inclusive
 const AGENT_SEED_SUFFIX = 'projectkeva';
 const AGENT_HEAD_POOL = 1000n;
@@ -604,9 +612,14 @@ async function populateAgentGalleryForBlock(gallery, blockHeight) {
   }
 }
 
-function populateAgentGalleries() {
-  const galleries = document.querySelectorAll('.avatar-gallery');
+function populateAgentGalleries(targets) {
+  const galleries = targets
+    ? Array.from(targets)
+    : Array.from(document.querySelectorAll('.avatar-gallery'));
   galleries.forEach((gallery) => {
+    if (galleryRenderMap.has(gallery)) {
+      return;
+    }
     const blockHeight = Number(gallery.dataset.block);
     if (!Number.isFinite(blockHeight)) {
       return;
@@ -625,25 +638,16 @@ function applyTimelineData(baseHeight, timestampSeconds) {
   if (Number.isNaN(baseDate.getTime())) {
     throw new Error('Invalid block timestamp');
   }
-  renderEntries(numericHeight, baseDate);
+  resetTimeline(numericHeight, baseDate);
 }
 
-function buildEntry(height, date, baseHeight) {
+function buildEntry(height, date) {
   const entry = document.createElement('div');
   entry.className = 'entry clearfix';
-
-  const offset = height - baseHeight;
-  let offsetLabel = '当前区块';
-  if (offset > 0) {
-    offsetLabel = `未来区块 +${offset}`;
-  } else if (offset < 0) {
-    offsetLabel = `历史区块 ${offset}`;
-  }
 
   const cardClasses = 'card card-gallery';
   const contentClasses = 'content content-gallery';
   const contentHtml = `<div class="avatar-gallery" data-block="${height}"><div class="avatar-loading">正在生成头像…</div></div>`;
-  const metaHtml = offsetLabel ? `<div class="meta meta-offset">${offsetLabel}</div>` : '';
 
   entry.innerHTML = `
     <div class="title">
@@ -657,7 +661,6 @@ function buildEntry(height, date, baseHeight) {
     <div class="body">
       <div class="${cardClasses}">
         <div class="${contentClasses}">${contentHtml}</div>
-        ${metaHtml}
       </div>
     </div>
   `;
@@ -665,24 +668,53 @@ function buildEntry(height, date, baseHeight) {
   return entry;
 }
 
-function renderEntries(baseHeight, baseDate) {
-  const fragment = document.createDocumentFragment();
-  for (let i = 0; i < 30; i++) {
-    const height = baseHeight + i;
-    const date = new Date(baseDate.getTime() + i * 2 * 60 * 1000);
-    fragment.appendChild(buildEntry(height, date, baseHeight));
+function appendMoreEntries(count) {
+  if (!Number.isFinite(count) || count <= 0) {
+    return;
+  }
+  if (baseBlockHeight === null || !(baseBlockDate instanceof Date)) {
+    return;
   }
 
-  timelineEl.innerHTML = '';
+  const fragment = document.createDocumentFragment();
+  const newGalleries = [];
+
+  for (let i = 0; i < count; i++) {
+    const index = entriesLoaded + i;
+    const height = baseBlockHeight + index;
+    const date = new Date(baseBlockDate.getTime() + index * 2 * 60 * 1000);
+    const entry = buildEntry(height, date);
+    const gallery = entry.querySelector('.avatar-gallery');
+    if (gallery) {
+      newGalleries.push(gallery);
+    }
+    fragment.appendChild(entry);
+  }
+
   timelineEl.appendChild(fragment);
-  hasRenderedTimeline = true;
-  galleryRenderMap.clear();
-  populateAgentGalleries();
+  entriesLoaded += count;
+  populateAgentGalleries(newGalleries);
   updateTimers();
+  hasRenderedTimeline = entriesLoaded > 0;
+}
+
+function resetTimeline(baseHeight, baseDate) {
+  baseBlockHeight = baseHeight;
+  baseBlockDate = baseDate;
+  entriesLoaded = 0;
+  timelineEl.innerHTML = '';
+  galleryRenderMap.clear();
+  appendMoreEntries(INITIAL_BATCH_COUNT);
+  isLoadingMore = false;
 }
 
 function showStatus(message, isError = false) {
   hasRenderedTimeline = false;
+  baseBlockHeight = null;
+  baseBlockDate = null;
+  entriesLoaded = 0;
+  isLoadingMore = false;
+  galleryRenderMap.clear();
   timelineEl.innerHTML = '';
   const statusEl = document.createElement('div');
   statusEl.id = STATUS_ID;
@@ -699,6 +731,31 @@ async function loadTimelineDirect(statusMessage, isError = false) {
   } catch (error) {
     console.error('Failed to load block data', error);
     showStatus('无法加载区块信息，请稍后重试。', true);
+  }
+}
+
+function handleInfiniteScroll() {
+  if (!hasRenderedTimeline || baseBlockHeight === null || isLoadingMore) {
+    return;
+  }
+
+  const doc = document.documentElement;
+  const body = document.body;
+  const scrollTop = window.pageYOffset || doc.scrollTop || body.scrollTop || 0;
+  const viewportHeight = window.innerHeight || doc.clientHeight || body.clientHeight || 0;
+  const scrollHeight = Math.max(doc.scrollHeight, body.scrollHeight);
+  const threshold = scrollHeight - 400;
+
+  if (scrollTop + viewportHeight >= threshold) {
+    isLoadingMore = true;
+    const schedule =
+      typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function'
+        ? window.requestAnimationFrame.bind(window)
+        : (callback) => setTimeout(callback, 0);
+    schedule(() => {
+      appendMoreEntries(LOAD_MORE_BATCH_COUNT);
+      isLoadingMore = false;
+    });
   }
 }
 
@@ -834,6 +891,8 @@ function updateTimers() {
 }
 
 setInterval(updateTimers, 200);
+
+window.addEventListener('scroll', handleInfiniteScroll, { passive: true });
 
 if (hasNativeBridge) {
   window.addEventListener('message', handleNativeTimelineMessage);
