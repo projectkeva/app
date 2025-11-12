@@ -183,6 +183,13 @@ const ELECTRUM_ENDPOINTS = [
 const timelineEl = document.getElementById('timeline');
 const STATUS_ID = 'status';
 const REQUEST_METHOD = 'blockchain.headers.subscribe';
+const hasNativeBridge =
+  typeof window !== 'undefined' &&
+  window.ReactNativeWebView &&
+  typeof window.ReactNativeWebView.postMessage === 'function';
+const NATIVE_TIMEOUT_MS = 12000;
+let nativeRequestTimeoutId = null;
+let hasRenderedTimeline = false;
 
 function littleEndianHexToNumber(leHex) {
   if (!leHex || leHex.length % 2 !== 0) {
@@ -315,6 +322,19 @@ function formatBlock(height) {
   return String(height).padStart(7, '0');
 }
 
+function applyTimelineData(baseHeight, timestampSeconds) {
+  const numericHeight = Number(baseHeight);
+  const numericTimestamp = Number(timestampSeconds);
+  if (!Number.isFinite(numericHeight) || !Number.isFinite(numericTimestamp)) {
+    throw new Error('Invalid block payload');
+  }
+  const baseDate = new Date(numericTimestamp * 1000);
+  if (Number.isNaN(baseDate.getTime())) {
+    throw new Error('Invalid block timestamp');
+  }
+  renderEntries(numericHeight, baseDate);
+}
+
 function buildEntry(height, date, baseHeight) {
   const entry = document.createElement('div');
   entry.className = 'entry clearfix';
@@ -358,10 +378,12 @@ function renderEntries(baseHeight, baseDate) {
 
   timelineEl.innerHTML = '';
   timelineEl.appendChild(fragment);
+  hasRenderedTimeline = true;
   updateTimers();
 }
 
 function showStatus(message, isError = false) {
+  hasRenderedTimeline = false;
   timelineEl.innerHTML = '';
   const statusEl = document.createElement('div');
   statusEl.id = STATUS_ID;
@@ -370,19 +392,109 @@ function showStatus(message, isError = false) {
   timelineEl.appendChild(statusEl);
 }
 
-async function loadTimeline() {
+async function loadTimelineDirect() {
   showStatus('正在连接 Kevacoin ElectrumX…');
   try {
     const latest = await fetchLatestBlock();
-    const baseHeight = latest.height;
-    const baseDate = new Date(latest.timestamp * 1000);
-    if (!Number.isFinite(baseHeight) || Number.isNaN(baseDate.getTime())) {
-      throw new Error('Invalid block payload');
-    }
-    renderEntries(baseHeight, baseDate);
+    applyTimelineData(latest.height, latest.timestamp);
   } catch (error) {
     console.error('Failed to load block data', error);
     showStatus('无法加载区块信息，请稍后重试。', true);
+  }
+}
+
+function clearNativeTimeout() {
+  if (nativeRequestTimeoutId !== null) {
+    clearTimeout(nativeRequestTimeoutId);
+    nativeRequestTimeoutId = null;
+  }
+}
+
+function handleNativeTimelineMessage(event) {
+  if (!hasNativeBridge) {
+    return;
+  }
+
+  let rawData = null;
+  if (event && typeof event === 'object' && 'data' in event) {
+    rawData = event.data;
+  } else if (typeof event === 'string') {
+    rawData = event;
+  }
+  if (!rawData) {
+    return;
+  }
+
+  let parsed = null;
+  if (typeof rawData === 'string') {
+    const trimmed = rawData.trim();
+    if (!trimmed) {
+      return;
+    }
+    try {
+      parsed = JSON.parse(trimmed);
+    } catch (error) {
+      return;
+    }
+  } else if (typeof rawData === 'object') {
+    parsed = rawData;
+  }
+
+  if (!parsed || typeof parsed !== 'object') {
+    return;
+  }
+
+  if (parsed.type === 'getagents_latest_block_response') {
+    clearNativeTimeout();
+    try {
+      const payload = parsed.payload || {};
+      if (payload.electrum && payload.electrum.host) {
+        console.log('Get Agents Electrum host:', payload.electrum.host);
+      }
+      applyTimelineData(payload.height, payload.timestamp);
+    } catch (error) {
+      console.error('Invalid payload from native Electrum bridge', error);
+      showStatus('应用返回的数据无效。', true);
+    }
+  } else if (parsed.type === 'getagents_latest_block_error') {
+    clearNativeTimeout();
+    if (hasRenderedTimeline) {
+      console.warn('Native Electrum bridge reported error after rendering', parsed.error);
+      return;
+    }
+    console.error('Native Electrum bridge reported error', parsed.error);
+    showStatus('无法加载区块信息，请稍后重试。', true);
+  }
+}
+
+function requestTimelineFromNative() {
+  if (!hasNativeBridge) {
+    loadTimelineDirect();
+    return;
+  }
+
+  showStatus('正在通过应用 Electrum 服务加载区块…');
+  try {
+    const message = JSON.stringify({ type: 'getagents_latest_block_request' });
+    window.ReactNativeWebView.postMessage(message);
+    clearNativeTimeout();
+    nativeRequestTimeoutId = setTimeout(() => {
+      nativeRequestTimeoutId = null;
+      if (!hasRenderedTimeline) {
+        showStatus('等待应用响应超时。', true);
+      }
+    }, NATIVE_TIMEOUT_MS);
+  } catch (error) {
+    console.error('Failed to request Electrum data from native bridge', error);
+    showStatus('无法加载区块信息，请稍后重试。', true);
+  }
+}
+
+function initializeTimeline() {
+  if (hasNativeBridge) {
+    requestTimelineFromNative();
+  } else {
+    loadTimelineDirect();
   }
 }
 
@@ -414,7 +526,17 @@ function updateTimers() {
 }
 
 setInterval(updateTimers, 200);
-loadTimeline();
+
+if (hasNativeBridge) {
+  window.addEventListener('message', handleNativeTimelineMessage);
+  document.addEventListener('message', handleNativeTimelineMessage);
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initializeTimeline);
+} else {
+  initializeTimeline();
+}
 
 timelineEl.addEventListener('click', (event) => {
   const btn = event.target.closest('.btn-get');
