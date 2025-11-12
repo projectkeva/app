@@ -190,6 +190,7 @@ const hasNativeBridge =
 const NATIVE_TIMEOUT_MS = 12000;
 let nativeRequestTimeoutId = null;
 let hasRenderedTimeline = false;
+let hasTriggeredDirectFallback = false;
 
 function littleEndianHexToNumber(leHex) {
   if (!leHex || leHex.length % 2 !== 0) {
@@ -392,8 +393,8 @@ function showStatus(message, isError = false) {
   timelineEl.appendChild(statusEl);
 }
 
-async function loadTimelineDirect() {
-  showStatus('正在连接 Kevacoin ElectrumX…');
+async function loadTimelineDirect(statusMessage, isError = false) {
+  showStatus(statusMessage || '正在连接 Kevacoin ElectrumX…', isError);
   try {
     const latest = await fetchLatestBlock();
     applyTimelineData(latest.height, latest.timestamp);
@@ -408,6 +409,15 @@ function clearNativeTimeout() {
     clearTimeout(nativeRequestTimeoutId);
     nativeRequestTimeoutId = null;
   }
+}
+
+function triggerDirectFallback(message, isError = false) {
+  if (hasRenderedTimeline || hasTriggeredDirectFallback) {
+    return;
+  }
+  clearNativeTimeout();
+  hasTriggeredDirectFallback = true;
+  loadTimelineDirect(message || '正在直接连接 Kevacoin ElectrumX…', isError);
 }
 
 function handleNativeTimelineMessage(event) {
@@ -454,7 +464,7 @@ function handleNativeTimelineMessage(event) {
       applyTimelineData(payload.height, payload.timestamp);
     } catch (error) {
       console.error('Invalid payload from native Electrum bridge', error);
-      showStatus('应用返回的数据无效。', true);
+      triggerDirectFallback('应用返回的数据无效，正在直接连接 Kevacoin ElectrumX…', true);
     }
   } else if (parsed.type === 'getagents_latest_block_error') {
     clearNativeTimeout();
@@ -463,7 +473,7 @@ function handleNativeTimelineMessage(event) {
       return;
     }
     console.error('Native Electrum bridge reported error', parsed.error);
-    showStatus('无法加载区块信息，请稍后重试。', true);
+    triggerDirectFallback('应用 Electrum 服务不可用，正在直接连接 Kevacoin ElectrumX…');
   }
 }
 
@@ -481,12 +491,12 @@ function requestTimelineFromNative() {
     nativeRequestTimeoutId = setTimeout(() => {
       nativeRequestTimeoutId = null;
       if (!hasRenderedTimeline) {
-        showStatus('等待应用响应超时。', true);
+        triggerDirectFallback('等待应用响应超时，正在直接连接 Kevacoin ElectrumX…');
       }
     }, NATIVE_TIMEOUT_MS);
   } catch (error) {
     console.error('Failed to request Electrum data from native bridge', error);
-    showStatus('无法加载区块信息，请稍后重试。', true);
+    triggerDirectFallback('无法通过应用加载区块信息，正在直接连接 Kevacoin ElectrumX…', true);
   }
 }
 
