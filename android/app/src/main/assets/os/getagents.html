@@ -144,7 +144,7 @@
     padding-left: 32px;
   }
 
-  .card {
+  .card { 
     background: linear-gradient(180deg, rgba(13,32,34,.95), rgba(10,25,27,.95));
     border: 1px solid var(--line);
     border-radius: 12px;
@@ -157,6 +157,110 @@
   .content { min-height: 8px; font-size: 13px; color: var(--fg); }
 
   .meta { font-size: 12px; color: var(--muted); margin-top: 10px; }
+
+  .card.card-gallery {
+    padding: 18px 18px 20px;
+  }
+
+  .content.content-gallery {
+    padding: 0;
+    min-height: 0;
+  }
+
+  .avatar-gallery {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+    gap: 14px;
+    width: 100%;
+  }
+
+  .avatar-item {
+    background: rgba(9, 25, 27, 0.9);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 10px 10px 12px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, .25);
+    min-height: 128px;
+  }
+
+  .avatar-item.avatar-missing {
+    opacity: .45;
+  }
+
+  .avatar-sprite {
+    position: relative;
+    width: 100%;
+    padding-top: 100%;
+  }
+
+  .avatar-sprite img {
+    position: absolute;
+    left: 0;
+    width: 100%;
+    image-rendering: pixelated;
+    transition: filter .3s ease;
+  }
+
+  .avatar-sprite img.avatar-head {
+    top: 0;
+    height: 68%;
+  }
+
+  .avatar-sprite img.avatar-cloth {
+    bottom: 0;
+    height: 36%;
+  }
+
+  .avatar-id {
+    margin-top: 10px;
+    font-size: 11px;
+    color: var(--muted);
+    letter-spacing: 0.6px;
+    text-transform: uppercase;
+  }
+
+  .avatar-loading,
+  .avatar-error {
+    text-align: center;
+    color: var(--muted);
+    font-size: 12px;
+    padding: 22px 0;
+    width: 100%;
+  }
+
+  .avatar-error {
+    color: var(--error);
+  }
+
+  .avatar-placeholder {
+    font-size: 24px;
+    line-height: 1;
+    color: var(--accent);
+  }
+
+  .card-gallery .meta {
+    margin-top: 18px;
+  }
+
+  @media (max-width: 680px) {
+    .avatar-gallery {
+      grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
+      gap: 12px;
+    }
+
+    .avatar-item {
+      min-height: 118px;
+      padding: 8px 8px 10px;
+    }
+
+    .avatar-id {
+      font-size: 10px;
+    }
+  }
 
   hr.sep {
     border: none;
@@ -191,6 +295,12 @@ const NATIVE_TIMEOUT_MS = 12000;
 let nativeRequestTimeoutId = null;
 let hasRenderedTimeline = false;
 let hasTriggeredDirectFallback = false;
+let galleryRenderToken = 0;
+
+const AVATAR_COUNT = 21; // 0 through 20 inclusive
+const AGENT_SEED_SUFFIX = 'projectkeva';
+const AGENT_HEAD_POOL = 1000n;
+const AGENT_CLOTH_POOL = 500n;
 
 function littleEndianHexToNumber(leHex) {
   if (!leHex || leHex.length % 2 !== 0) {
@@ -323,6 +433,183 @@ function formatBlock(height) {
   return String(height).padStart(7, '0');
 }
 
+function mapRange(value, inMin, inMax, outMin, outMax) {
+  if (inMax === inMin) {
+    return outMin;
+  }
+  return outMin + ((value - inMin) * (outMax - outMin)) / (inMax - inMin);
+}
+
+function agentEpochFromBlock(blockHeight) {
+  if (blockHeight < 2000000) return 1;
+  if (blockHeight < 3000000) return 2;
+  return 3;
+}
+
+function agentIdForIndex(blockHeight, index) {
+  const digits = String(blockHeight).length;
+  return `${digits}${blockHeight}${index}`;
+}
+
+function getCryptoObject() {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+  if (window.crypto && window.crypto.subtle) {
+    return window.crypto;
+  }
+  if (window.msCrypto && window.msCrypto.subtle) {
+    return window.msCrypto;
+  }
+  return null;
+}
+
+async function sha256Bytes(message) {
+  const cryptoObj = getCryptoObject();
+  if (!cryptoObj || !cryptoObj.subtle || typeof cryptoObj.subtle.digest !== 'function') {
+    throw new Error('Web Crypto API is not available');
+  }
+  const encoder = new TextEncoder();
+  const data = encoder.encode(message);
+  const hash = await cryptoObj.subtle.digest('SHA-256', data);
+  return new Uint8Array(hash);
+}
+
+function u64(bytes) {
+  let value = 0n;
+  for (let i = 0; i < bytes.length; i++) {
+    value = (value << 8n) | BigInt(bytes[i]);
+  }
+  return value;
+}
+
+async function generateAgentProfile(blockHeight, index) {
+  const id = agentIdForIndex(blockHeight, index);
+  const seed = await sha256Bytes(id + AGENT_SEED_SUFFIX);
+  if (!seed || seed.length < 19) {
+    throw new Error('Invalid seed bytes for agent profile');
+  }
+
+  const epoch = agentEpochFromBlock(blockHeight);
+  const headValue = u64(seed.subarray(0, 8));
+  const clothValue = u64(seed.subarray(8, 16));
+  const headIdx = Number(headValue % AGENT_HEAD_POOL) + 1;
+  const clothIdx = Number(clothValue % AGENT_CLOTH_POOL) + 1;
+
+  const hue = mapRange(seed[16], 0, 255, -30, 30);
+  const satOffset = mapRange(seed[17], 0, 255, -0.15, 0.15) * 100;
+  const lightOffset = mapRange(seed[18], 0, 255, -0.10, 0.10) * 100;
+
+  const filter = `hue-rotate(${hue.toFixed(1)}deg) saturate(${(100 + satOffset).toFixed(1)}%) brightness(${(100 + lightOffset).toFixed(1)}%)`;
+
+  return {
+    id,
+    index,
+    epoch,
+    headIdx,
+    clothIdx,
+    headPath: `./asset/ep${epoch}/head/${headIdx}.png`,
+    clothPath: `./asset/ep${epoch}/cloth/${clothIdx}.png`,
+    filter,
+  };
+}
+
+function createAvatarElement(profile) {
+  const wrapper = document.createElement('div');
+  wrapper.className = 'avatar-item';
+  wrapper.dataset.agentId = profile.id;
+
+  const sprite = document.createElement('div');
+  sprite.className = 'avatar-sprite';
+
+  const clothImg = document.createElement('img');
+  clothImg.className = 'avatar-cloth';
+  clothImg.src = profile.clothPath;
+  clothImg.alt = `Agent cloth ${profile.clothIdx}`;
+  clothImg.loading = 'lazy';
+  clothImg.style.filter = profile.filter;
+
+  const headImg = document.createElement('img');
+  headImg.className = 'avatar-head';
+  headImg.src = profile.headPath;
+  headImg.alt = `Agent head ${profile.headIdx}`;
+  headImg.loading = 'lazy';
+  headImg.style.filter = profile.filter;
+
+  const onError = () => {
+    wrapper.classList.add('avatar-missing');
+  };
+
+  clothImg.addEventListener('error', onError);
+  headImg.addEventListener('error', onError);
+
+  sprite.appendChild(clothImg);
+  sprite.appendChild(headImg);
+
+  const label = document.createElement('div');
+  label.className = 'avatar-id';
+  label.textContent = profile.id;
+
+  wrapper.appendChild(sprite);
+  wrapper.appendChild(label);
+
+  return wrapper;
+}
+
+async function populateAgentGallery(baseHeight) {
+  const gallery = document.querySelector(`.avatar-gallery[data-block="${baseHeight}"]`);
+  if (!gallery) {
+    return;
+  }
+
+  const token = ++galleryRenderToken;
+  gallery.innerHTML = '<div class="avatar-loading">正在生成头像…</div>';
+
+  try {
+    const indices = Array.from({ length: AVATAR_COUNT }, (_, i) => i);
+    const results = await Promise.all(
+      indices.map((index) =>
+        generateAgentProfile(baseHeight, index)
+          .then((profile) => ({ ok: true, profile, index }))
+          .catch((error) => ({ ok: false, error, index }))
+      )
+    );
+    if (token !== galleryRenderToken) {
+      return;
+    }
+    gallery.innerHTML = '';
+    let successCount = 0;
+    results.forEach((result) => {
+      if (result.ok && result.profile) {
+        gallery.appendChild(createAvatarElement(result.profile));
+        successCount += 1;
+      } else {
+        console.warn('Failed to generate agent avatar', baseHeight, result.index, result.error);
+        const fallback = document.createElement('div');
+        fallback.className = 'avatar-item avatar-missing';
+        const placeholder = document.createElement('div');
+        placeholder.className = 'avatar-placeholder';
+        placeholder.textContent = '⚠️';
+        const label = document.createElement('div');
+        label.className = 'avatar-id';
+        label.textContent = agentIdForIndex(baseHeight, result.index);
+        fallback.title = '头像生成失败';
+        fallback.appendChild(placeholder);
+        fallback.appendChild(label);
+        gallery.appendChild(fallback);
+      }
+    });
+    if (successCount === 0) {
+      gallery.innerHTML = '<div class="avatar-error">无法生成代理头像，请稍后重试。</div>';
+    }
+  } catch (error) {
+    console.error('Failed to generate agent avatars', error);
+    if (token === galleryRenderToken) {
+      gallery.innerHTML = '<div class="avatar-error">无法生成代理头像，请稍后重试。</div>';
+    }
+  }
+}
+
 function applyTimelineData(baseHeight, timestampSeconds) {
   const numericHeight = Number(baseHeight);
   const numericTimestamp = Number(timestampSeconds);
@@ -348,6 +635,15 @@ function buildEntry(height, date, baseHeight) {
     offsetLabel = `历史区块 ${offset}`;
   }
 
+  const isBaseEntry = offset === 0;
+  const cardClasses = 'card' + (isBaseEntry ? ' card-gallery' : '');
+  const contentClasses = 'content' + (isBaseEntry ? ' content-gallery' : '');
+  const contentHtml = isBaseEntry
+    ? `<div class="avatar-gallery" data-block="${height}"><div class="avatar-loading">正在生成头像…</div></div>`
+    : offsetLabel;
+  const separatorHtml = isBaseEntry ? '' : '<hr class="sep" />';
+  const metaHtml = `<div class="meta">${formatMeta(date)}</div>`;
+
   entry.innerHTML = `
     <div class="title">
       <h3>${formatDateTime(date)}</h3>
@@ -358,10 +654,10 @@ function buildEntry(height, date, baseHeight) {
       <p>BLOCK ${formatBlock(height)}</p>
     </div>
     <div class="body">
-      <div class="card">
-        <div class="content">${offsetLabel}</div>
-        <hr class="sep" />
-        <div class="meta">${formatMeta(date)}</div>
+      <div class="${cardClasses}">
+        <div class="${contentClasses}">${contentHtml}</div>
+        ${separatorHtml}
+        ${metaHtml}
       </div>
     </div>
   `;
@@ -380,6 +676,7 @@ function renderEntries(baseHeight, baseDate) {
   timelineEl.innerHTML = '';
   timelineEl.appendChild(fragment);
   hasRenderedTimeline = true;
+  populateAgentGallery(baseHeight);
   updateTimers();
 }
 
