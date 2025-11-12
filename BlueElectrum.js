@@ -846,6 +846,11 @@ module.exports.blockchainKeva_getTransactionsInfo = async function(tx_hashes, na
   return await mainClient.blockchainKeva_getTransactionsInfo(tx_hashes, namespace_info);
 }
 
+module.exports.blockchainBlock_getHeader = async function(height) {
+  if (!mainClient) throw new Error('Electrum client is not connected');
+  return await mainClient.blockchainBlock_getHeader(height);
+}
+
 module.exports.blockchainBlock_count = async function() {
   return await mainClient.blockchainBlock_count();
 }
