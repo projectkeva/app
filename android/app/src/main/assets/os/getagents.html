@@ -296,6 +296,7 @@ let nativeRequestTimeoutId = null;
 let hasRenderedTimeline = false;
 let hasTriggeredDirectFallback = false;
 let galleryRenderToken = 0;
+const galleryRenderMap = new Map();
 
 const AVATAR_COUNT = 21; // 0 through 20 inclusive
 const AGENT_SEED_SUFFIX = 'projectkeva';
@@ -420,13 +421,6 @@ function formatDateTime(date) {
   const mm = String(date.getMinutes()).padStart(2, '0');
   const ss = String(date.getSeconds()).padStart(2, '0');
   return `${y}-${m}-${d} ${hh}:${mm}:${ss}`;
-}
-
-function formatMeta(date) {
-  const hh = String(date.getHours()).padStart(2, '0');
-  const mm = String(date.getMinutes()).padStart(2, '0');
-  const ss = String(date.getSeconds()).padStart(2, '0');
-  return `本地时间 ${hh}:${mm}:${ss}`;
 }
 
 function formatBlock(height) {
@@ -556,25 +550,25 @@ function createAvatarElement(profile) {
   return wrapper;
 }
 
-async function populateAgentGallery(baseHeight) {
-  const gallery = document.querySelector(`.avatar-gallery[data-block="${baseHeight}"]`);
+async function populateAgentGalleryForBlock(gallery, blockHeight) {
   if (!gallery) {
     return;
   }
 
   const token = ++galleryRenderToken;
+  galleryRenderMap.set(gallery, token);
   gallery.innerHTML = '<div class="avatar-loading">正在生成头像…</div>';
 
   try {
     const indices = Array.from({ length: AVATAR_COUNT }, (_, i) => i);
     const results = await Promise.all(
       indices.map((index) =>
-        generateAgentProfile(baseHeight, index)
+        generateAgentProfile(blockHeight, index)
           .then((profile) => ({ ok: true, profile, index }))
           .catch((error) => ({ ok: false, error, index }))
       )
     );
-    if (token !== galleryRenderToken) {
+    if (galleryRenderMap.get(gallery) !== token) {
       return;
     }
     gallery.innerHTML = '';
@@ -584,7 +578,7 @@ async function populateAgentGallery(baseHeight) {
         gallery.appendChild(createAvatarElement(result.profile));
         successCount += 1;
       } else {
-        console.warn('Failed to generate agent avatar', baseHeight, result.index, result.error);
+        console.warn('Failed to generate agent avatar', blockHeight, result.index, result.error);
         const fallback = document.createElement('div');
         fallback.className = 'avatar-item avatar-missing';
         const placeholder = document.createElement('div');
@@ -592,7 +586,7 @@ async function populateAgentGallery(baseHeight) {
         placeholder.textContent = '⚠️';
         const label = document.createElement('div');
         label.className = 'avatar-id';
-        label.textContent = agentIdForIndex(baseHeight, result.index);
+        label.textContent = agentIdForIndex(blockHeight, result.index);
         fallback.title = '头像生成失败';
         fallback.appendChild(placeholder);
         fallback.appendChild(label);
@@ -604,10 +598,21 @@ async function populateAgentGallery(baseHeight) {
     }
   } catch (error) {
     console.error('Failed to generate agent avatars', error);
-    if (token === galleryRenderToken) {
+    if (galleryRenderMap.get(gallery) === token) {
       gallery.innerHTML = '<div class="avatar-error">无法生成代理头像，请稍后重试。</div>';
     }
   }
+}
+
+function populateAgentGalleries() {
+  const galleries = document.querySelectorAll('.avatar-gallery');
+  galleries.forEach((gallery) => {
+    const blockHeight = Number(gallery.dataset.block);
+    if (!Number.isFinite(blockHeight)) {
+      return;
+    }
+    populateAgentGalleryForBlock(gallery, blockHeight);
+  });
 }
 
 function applyTimelineData(baseHeight, timestampSeconds) {
@@ -635,14 +640,10 @@ function buildEntry(height, date, baseHeight) {
     offsetLabel = `历史区块 ${offset}`;
   }
 
-  const isBaseEntry = offset === 0;
-  const cardClasses = 'card' + (isBaseEntry ? ' card-gallery' : '');
-  const contentClasses = 'content' + (isBaseEntry ? ' content-gallery' : '');
-  const contentHtml = isBaseEntry
-    ? `<div class="avatar-gallery" data-block="${height}"><div class="avatar-loading">正在生成头像…</div></div>`
-    : offsetLabel;
-  const separatorHtml = isBaseEntry ? '' : '<hr class="sep" />';
-  const metaHtml = `<div class="meta">${formatMeta(date)}</div>`;
+  const cardClasses = 'card card-gallery';
+  const contentClasses = 'content content-gallery';
+  const contentHtml = `<div class="avatar-gallery" data-block="${height}"><div class="avatar-loading">正在生成头像…</div></div>`;
+  const metaHtml = offsetLabel ? `<div class="meta meta-offset">${offsetLabel}</div>` : '';
 
   entry.innerHTML = `
     <div class="title">
@@ -656,7 +657,6 @@ function buildEntry(height, date, baseHeight) {
     <div class="body">
       <div class="${cardClasses}">
         <div class="${contentClasses}">${contentHtml}</div>
-        ${separatorHtml}
         ${metaHtml}
       </div>
     </div>
@@ -676,7 +676,8 @@ function renderEntries(baseHeight, baseDate) {
   timelineEl.innerHTML = '';
   timelineEl.appendChild(fragment);
   hasRenderedTimeline = true;
-  populateAgentGallery(baseHeight);
+  galleryRenderMap.clear();
+  populateAgentGalleries();
   updateTimers();
 }
 
