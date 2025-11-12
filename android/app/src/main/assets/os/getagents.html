@@ -231,8 +231,8 @@ function buildEntry(height, date, baseHeight) {
 function renderEntries(baseHeight, baseDate) {
   const fragment = document.createDocumentFragment();
   for (let i = 0; i < 30; i++) {
-    const height = baseHeight - 1 + i;
-    const date = new Date(baseDate.getTime() + (i - 1) * 2 * 60 * 1000);
+    const height = baseHeight + i;
+    const date = new Date(baseDate.getTime() + i * 2 * 60 * 1000);
     fragment.appendChild(buildEntry(height, date, baseHeight));
   }
 
