@@ -175,9 +175,124 @@
 </div>
 
 <script>
-const API_URL = 'https://mempool.space/api/blocks?limit=1';
+const ELECTRUM_ENDPOINTS = [
+  'wss://electrumx.kevacoin.org:50004',
+  'wss://electrum.kevacoin.org:50004',
+  'wss://ec.kevacoin.org:50004',
+];
 const timelineEl = document.getElementById('timeline');
 const STATUS_ID = 'status';
+const REQUEST_METHOD = 'blockchain.headers.subscribe';
+
+function littleEndianHexToNumber(leHex) {
+  if (!leHex || leHex.length % 2 !== 0) {
+    return null;
+  }
+  const bytes = leHex.match(/.{2}/g);
+  if (!bytes) return null;
+  const beHex = bytes.reverse().join('');
+  return Number.parseInt(beHex, 16);
+}
+
+function parseHeaderTimestamp(header) {
+  if (!header) return null;
+  if (typeof header.timestamp === 'number') {
+    return header.timestamp;
+  }
+  if (typeof header.hex === 'string' && header.hex.length >= 144) {
+    const timeLe = header.hex.slice(136, 144);
+    const ts = littleEndianHexToNumber(timeLe);
+    if (Number.isFinite(ts)) {
+      return ts;
+    }
+  }
+  return null;
+}
+
+function extractHeaderPayload(message) {
+  if (!message) return null;
+  if (message.result && typeof message.result === 'object') {
+    return message.result;
+  }
+  if (Array.isArray(message.params) && message.params.length > 0) {
+    return message.params[0];
+  }
+  return null;
+}
+
+function requestLatestHeader(endpoint) {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const ws = new WebSocket(endpoint);
+    const timeout = setTimeout(() => {
+      if (!settled) {
+        settled = true;
+        try { ws.close(); } catch (_) {}
+        reject(new Error('ElectrumX request timed out'));
+      }
+    }, 10000);
+
+    const finalize = (err, data) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      try { ws.close(); } catch (_) {}
+      if (err) {
+        reject(err);
+      } else {
+        resolve(data);
+      }
+    };
+
+    ws.onopen = () => {
+      try {
+        ws.send(JSON.stringify({ id: Date.now(), method: REQUEST_METHOD, params: [] }));
+      } catch (error) {
+        finalize(error);
+      }
+    };
+
+    ws.onerror = () => {
+      finalize(new Error('ElectrumX connection error'));
+    };
+
+    ws.onclose = () => {
+      finalize(new Error('ElectrumX connection closed before response'));
+    };
+
+    ws.onmessage = (event) => {
+      try {
+        const payload = JSON.parse(event.data);
+        const header = extractHeaderPayload(payload);
+        if (!header) {
+          return;
+        }
+        const height = Number(header.height);
+        const timestamp = parseHeaderTimestamp(header);
+        if (!Number.isFinite(height) || !Number.isFinite(timestamp)) {
+          finalize(new Error('Invalid ElectrumX header payload'));
+          return;
+        }
+        finalize(null, { height, timestamp });
+      } catch (error) {
+        finalize(error);
+      }
+    };
+  });
+}
+
+async function fetchLatestBlock() {
+  let lastError = null;
+  for (const endpoint of ELECTRUM_ENDPOINTS) {
+    try {
+      return await requestLatestHeader(endpoint);
+    } catch (error) {
+      lastError = error;
+      console.warn('ElectrumX endpoint failed', endpoint, error);
+    }
+  }
+  throw lastError || new Error('No ElectrumX endpoint available');
+}
 
 function formatDateTime(date) {
   const y = date.getFullYear();
@@ -256,19 +371,11 @@ function showStatus(message, isError = false) {
 }
 
 async function loadTimeline() {
-  showStatus('正在读取最新区块信息…');
+  showStatus('正在连接 Kevacoin ElectrumX…');
   try {
-    const response = await fetch(API_URL);
-    if (!response.ok) {
-      throw new Error(`Network response was not ok (${response.status})`);
-    }
-    const blocks = await response.json();
-    if (!Array.isArray(blocks) || blocks.length === 0) {
-      throw new Error('Empty block data');
-    }
-    const latest = blocks[0];
-    const baseHeight = Number(latest.height);
-    const baseDate = new Date(Number(latest.timestamp) * 1000);
+    const latest = await fetchLatestBlock();
+    const baseHeight = latest.height;
+    const baseDate = new Date(latest.timestamp * 1000);
     if (!Number.isFinite(baseHeight) || Number.isNaN(baseDate.getTime())) {
       throw new Error('Invalid block payload');
     }
