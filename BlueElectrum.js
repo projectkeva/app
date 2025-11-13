@@ -624,6 +624,55 @@ module.exports.waitTillConnected = async function() {
   });
 };
 
+async function ensureElectrumClientReady() {
+  if (!mainClient || !mainConnected) {
+    await module.exports.waitTillConnected();
+  }
+  if (!mainClient) {
+    throw new Error('Electrum client is not connected');
+  }
+}
+
+function parseHeaderTimestampFromHex(headerHex) {
+  if (typeof headerHex !== 'string') {
+    return null;
+  }
+  try {
+    const buffer = Buffer.from(headerHex, 'hex');
+    if (buffer.length < 80) {
+      return null;
+    }
+    return buffer.readUInt32LE(68);
+  } catch (error) {
+    console.warn('BlueElectrum: failed to parse header hex timestamp', error);
+    return null;
+  }
+}
+
+function extractTimestampFromHeader(header) {
+  if (!header) {
+    return null;
+  }
+
+  if (typeof header === 'object') {
+    if (Number.isFinite(header.timestamp)) {
+      return Number(header.timestamp);
+    }
+    if (Number.isFinite(header.time)) {
+      return Number(header.time);
+    }
+    if (typeof header.hex === 'string') {
+      return parseHeaderTimestampFromHex(header.hex);
+    }
+  }
+
+  if (typeof header === 'string') {
+    return parseHeaderTimestampFromHex(header);
+  }
+
+  return null;
+}
+
 module.exports.estimateFees = async function() {
   const fast = await module.exports.estimateFee(1);
   const medium = await module.exports.estimateFee(18);
@@ -854,5 +903,73 @@ module.exports.blockchainBlock_getHeader = async function(height) {
 module.exports.blockchainBlock_count = async function() {
   return await mainClient.blockchainBlock_count();
 }
+
+module.exports.getLatestHeaderSimple = async function() {
+  await ensureElectrumClientReady();
+
+  let host = defaultPeer.host;
+  let ssl = defaultPeer.ssl || DEFAULT_PORT;
+  const peer = getCurrentPeer() || {};
+  if (peer.host) {
+    host = peer.host;
+  } else if (mainClient && mainClient.host) {
+    host = mainClient.host;
+  }
+
+  const preferredPort = peer.ssl || peer.tcp;
+  const parsedPreferredPort = parsePort(preferredPort);
+  if (Number.isFinite(parsedPreferredPort) && parsedPreferredPort > 0) {
+    ssl = parsedPreferredPort;
+  } else if (mainClient && Number.isFinite(mainClient.port)) {
+    ssl = mainClient.port;
+  }
+
+  let height = null;
+  let timestamp = null;
+
+  try {
+    const headerSub = await mainClient.blockchainHeaders_subscribe(false);
+    if (headerSub) {
+      if (Number.isFinite(headerSub.height)) {
+        height = Number(headerSub.height);
+      }
+      const tipTimestamp = headerSub.tip && headerSub.tip.timestamp;
+      if (Number.isFinite(tipTimestamp)) {
+        timestamp = Number(tipTimestamp);
+      } else if (Number.isFinite(headerSub.timestamp)) {
+        timestamp = Number(headerSub.timestamp);
+      }
+    }
+  } catch (error) {
+    console.warn('BlueElectrum: failed to subscribe for latest header', error);
+  }
+
+  if (!Number.isFinite(height)) {
+    try {
+      const countValue = await mainClient.blockchainBlock_count();
+      const numericCount = Number(countValue);
+      if (Number.isFinite(numericCount)) {
+        height = numericCount;
+      }
+    } catch (error) {
+      console.warn('BlueElectrum: failed to fetch block count for latest header', error);
+    }
+  }
+
+  if (!Number.isFinite(height)) {
+    throw new Error('Electrum header height unavailable');
+  }
+
+  if (!Number.isFinite(timestamp)) {
+    const header = await mainClient.blockchainBlock_getHeader(height);
+    timestamp = extractTimestampFromHeader(header);
+  }
+
+  if (!Number.isFinite(timestamp)) {
+    throw new Error('Electrum header timestamp unavailable');
+  }
+
+  return { height, timestamp, host, ssl };
+};
 
 module.exports.getCurrentPeer = getCurrentPeer;

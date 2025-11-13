@@ -70,56 +70,30 @@ export default function HomeScreen() {
 
       if (parsedMessage.type === 'getagents_latest_block_request') {
         try {
-          await BlueElectrum.waitTillConnected();
-          const heightValue = await BlueElectrum.blockchainBlock_count();
-          const latestHeight = Number(heightValue);
-          if (!Number.isFinite(latestHeight)) {
-            throw new Error('Invalid block height from Electrum');
+          const latestHeader = await BlueElectrum.getLatestHeaderSimple();
+          let electrumConfig = null;
+          try {
+            electrumConfig = await BlueElectrum.getConfig();
+          } catch (_) {
+            electrumConfig = null;
           }
 
-          const headerPromise = BlueElectrum.blockchainBlock_getHeader(latestHeight);
-          const configPromise = BlueElectrum.getConfig().catch(() => null);
-          const header = await headerPromise;
-          const electrumConfig = await configPromise;
-
-          const pickNumeric = value => {
-            if (typeof value === 'number') {
-              return value;
-            }
-            if (typeof value === 'string') {
-              const parsed = Number(value);
-              if (Number.isFinite(parsed)) {
-                return parsed;
-              }
-            }
-            return null;
-          };
-
-          let timestamp = null;
-          if (header && typeof header === 'object') {
-            timestamp = pickNumeric(header.timestamp);
-            if (!Number.isFinite(timestamp)) {
-              timestamp = pickNumeric(header.time);
-            }
+          const electrumPayload = electrumConfig && typeof electrumConfig === 'object'
+            ? { ...electrumConfig }
+            : {};
+          if (!electrumPayload.host) {
+            electrumPayload.host = latestHeader.host;
           }
-
-          if (!Number.isFinite(timestamp) && typeof BlueElectrum.calculateBlockTime === 'function') {
-            const fallbackTs = BlueElectrum.calculateBlockTime(latestHeight);
-            if (Number.isFinite(fallbackTs)) {
-              timestamp = fallbackTs;
-            }
-          }
-
-          if (!Number.isFinite(timestamp)) {
-            throw new Error('Invalid block timestamp from Electrum');
+          if (!electrumPayload.ssl) {
+            electrumPayload.ssl = electrumPayload.port || latestHeader.ssl;
           }
 
           sendMessageToWebView({
             type: 'getagents_latest_block_response',
             payload: {
-              height: latestHeight,
-              timestamp: timestamp,
-              electrum: electrumConfig,
+              height: latestHeader.height,
+              timestamp: latestHeader.timestamp,
+              electrum: electrumPayload,
             },
           });
         } catch (error) {
