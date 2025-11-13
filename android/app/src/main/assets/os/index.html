@@ -477,7 +477,9 @@ for(const win in textFiles){
   function shouldForward(parsed){
     if(!parsed||typeof parsed!=='object')return false;
     const type=parsed.type;
-    return type==='getagents_latest_block_response'||type==='getagents_latest_block_error';
+    return type==='getagents_latest_block_response'||
+      type==='getagents_latest_block_error'||
+      type==='getagents_create_namespace_result';
   }
 
   function handleNativeBridgeMessage(event){
@@ -496,7 +498,9 @@ for(const win in textFiles){
       return;
     }
     const parsed=parsePayload(event&&event.data);
-    if(!parsed||parsed.type!=='getagents_latest_block_request'){
+    if(!parsed||
+      (parsed.type!=='getagents_latest_block_request'&&
+       parsed.type!=='getagents_create_namespace')){
       return;
     }
     if(!window.ReactNativeWebView||typeof window.ReactNativeWebView.postMessage!=='function'){

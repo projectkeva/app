@@ -4,6 +4,7 @@ import { View, StatusBar } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { useNavigation } from 'react-navigation-hooks';
 import BlueElectrum from './BlueElectrum';
+import { handleGetAgentsNamespaceRequest } from './GetAgentsNamespace';
 
 export default function HomeScreen() {
   const navigation = useNavigation();
@@ -35,6 +36,11 @@ export default function HomeScreen() {
     }
   }, []);
 
+  const handleNamespaceCreationRequest = useCallback(
+    request => handleGetAgentsNamespaceRequest(request, sendMessageToWebView),
+    [sendMessageToWebView],
+  );
+
   const handleMessage = useCallback(
     async event => {
       const msg = event.nativeEvent && event.nativeEvent.data;
@@ -65,6 +71,15 @@ export default function HomeScreen() {
       }
 
       if (!parsedMessage || typeof parsedMessage !== 'object') {
+        return;
+      }
+
+      if (parsedMessage.type === 'getagents_create_namespace') {
+        try {
+          await handleNamespaceCreationRequest(parsedMessage);
+        } catch (error) {
+          console.warn('Failed to handle namespace creation request', error);
+        }
         return;
       }
 
@@ -105,7 +120,7 @@ export default function HomeScreen() {
         }
       }
     },
-    [navigation, sendMessageToWebView],
+    [navigation, sendMessageToWebView, handleNamespaceCreationRequest],
   );
 
   return (
