@@ -324,6 +324,7 @@ let baseBlockHeight = null;
 let baseBlockDate = null;
 let entriesLoaded = 0;
 let isLoadingMore = false;
+let autoReloadTriggered = false;
 
 const INITIAL_BATCH_COUNT = 11; // current block + 10 future blocks
 const LOAD_MORE_BATCH_COUNT = 10;
@@ -765,9 +766,12 @@ function applyTimelineData(baseHeight, timestampSeconds) {
   resetTimeline(numericHeight, baseDate);
 }
 
-function buildEntry(height, date) {
+function buildEntry(height, date, index) {
   const entry = document.createElement('div');
   entry.className = 'entry clearfix';
+  if (Number.isFinite(index)) {
+    entry.dataset.index = String(index);
+  }
 
   const cardClasses = 'card card-gallery';
   const contentClasses = 'content content-gallery';
@@ -807,7 +811,7 @@ function appendMoreEntries(count) {
     const index = entriesLoaded + i;
     const height = baseBlockHeight + index;
     const date = new Date(baseBlockDate.getTime() + index * 2 * 60 * 1000);
-    const entry = buildEntry(height, date);
+    const entry = buildEntry(height, date, index);
     const gallery = entry.querySelector('.avatar-gallery');
     if (gallery) {
       newGalleries.push(gallery);
@@ -826,6 +830,7 @@ function resetTimeline(baseHeight, baseDate) {
   baseBlockHeight = baseHeight;
   baseBlockDate = baseDate;
   entriesLoaded = 0;
+  autoReloadTriggered = false;
   timelineEl.innerHTML = '';
   galleryRenderMap.clear();
   galleryStateMap.clear();
@@ -839,6 +844,7 @@ function showStatus(message, isError = false) {
   baseBlockDate = null;
   entriesLoaded = 0;
   isLoadingMore = false;
+  autoReloadTriggered = false;
   galleryRenderMap.clear();
   galleryStateMap.clear();
   timelineEl.innerHTML = '';
@@ -1009,10 +1015,18 @@ function updateTimers() {
     if (!base) return;
     const target = new Date(base.getTime() + 60 * 1000);
     let diff = target - now;
+    const rawDiff = diff;
     if (diff < 0) diff = 0;
     const mm = String(Math.floor(diff / 60000)).padStart(2, '0');
     const ss = String(Math.floor((diff % 60000) / 1000)).padStart(2, '0');
     timerEl.textContent = '⏳ ' + mm + ':' + ss;
+    const entryIndex = Number(entry.dataset.index);
+    if (!autoReloadTriggered && Number.isFinite(entryIndex) && entryIndex === 1 && rawDiff <= 0) {
+      autoReloadTriggered = true;
+      setTimeout(() => {
+        window.location.reload();
+      }, 100);
+    }
   });
 }
 
