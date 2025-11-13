@@ -637,16 +637,30 @@ function parseHeaderTimestampFromHex(headerHex) {
   if (typeof headerHex !== 'string') {
     return null;
   }
-  try {
-    const buffer = Buffer.from(headerHex, 'hex');
-    if (buffer.length < 80) {
-      return null;
-    }
-    return buffer.readUInt32LE(68);
-  } catch (error) {
-    console.warn('BlueElectrum: failed to parse header hex timestamp', error);
+
+  const trimmedHex = headerHex.trim();
+  // Need at least 80 bytes (160 hex chars) to reach timestamp field.
+  if (trimmedHex.length < 144) {
     return null;
   }
+
+  const tsLittleEndian = trimmedHex.slice(136, 144);
+  if (tsLittleEndian.length !== 8) {
+    return null;
+  }
+
+  const bytePairs = tsLittleEndian.match(/.{2}/g);
+  if (!bytePairs || bytePairs.length !== 4) {
+    return null;
+  }
+
+  const bigEndianHex = bytePairs.reverse().join('');
+  const timestamp = parseInt(bigEndianHex, 16);
+  if (!Number.isFinite(timestamp)) {
+    return null;
+  }
+
+  return timestamp;
 }
 
 function extractTimestampFromHeader(header) {
