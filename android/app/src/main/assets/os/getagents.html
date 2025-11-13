@@ -320,6 +320,7 @@ let hasTriggeredDirectFallback = false;
 let galleryRenderToken = 0;
 const galleryRenderMap = new Map();
 const galleryStateMap = new Map();
+let hasAppServerReadyForRefresh = !hasNativeBridge;
 
 let baseBlockHeight = null;
 let baseBlockDate = null;
@@ -952,8 +953,12 @@ function handleNativeTimelineMessage(event) {
     clearNativeTimeout();
     try {
       const payload = parsed.payload || {};
-      if (payload.electrum && payload.electrum.host) {
-        console.log('Get Agents Electrum host:', payload.electrum.host);
+      if (payload.electrum) {
+        const serverHint = payload.electrum.host || payload.electrum.server || payload.electrum.serverName;
+        if (serverHint) {
+          console.log('Get Agents Electrum host:', serverHint);
+          hasAppServerReadyForRefresh = true;
+        }
       }
       applyTimelineData(payload.height, payload.timestamp);
     } catch (error) {
@@ -1048,7 +1053,7 @@ function updateTimers() {
 
     const isSecondEntry = Number.isFinite(entryIndex) && entryIndex === 1;
     const isTimerZero = rawDiff <= 0 && mm === '00' && ss === '00';
-    if (!autoReloadTriggered && isSecondEntry && isTimerZero) {
+    if (!autoReloadTriggered && hasAppServerReadyForRefresh && isSecondEntry && isTimerZero) {
       autoReloadTriggered = true;
       setTimeout(() => {
         window.location.reload();
