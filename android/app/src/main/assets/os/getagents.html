@@ -314,21 +314,51 @@ const timelineEl = document.getElementById('timeline');
 const STATUS_ID = 'status';
 const REQUEST_METHOD = 'blockchain.headers.subscribe';
 const BLOCK_INTERVAL_MS = 2 * 60 * 1000;
+
+function getParentReactNativeBridge() {
+  try {
+    if (
+      typeof window === 'undefined' ||
+      !window.parent ||
+      window.parent === window
+    ) {
+      return null;
+    }
+    const bridge = window.parent.ReactNativeWebView;
+    if (bridge && typeof bridge.postMessage === 'function') {
+      return bridge;
+    }
+  } catch (error) {
+    console.warn('Get Agents: unable to access parent native bridge', error);
+  }
+  return null;
+}
+
+function canProxyThroughParent() {
+  try {
+    return (
+      typeof window !== 'undefined' &&
+      window.parent &&
+      window.parent !== window &&
+      typeof window.parent.postMessage === 'function'
+    );
+  } catch (error) {
+    console.warn('Get Agents: unable to verify parent proxy availability', error);
+    return false;
+  }
+}
+
 let hasNativeBridge =
   typeof window !== 'undefined' &&
   window.ReactNativeWebView &&
   typeof window.ReactNativeWebView.postMessage === 'function';
-const parentHasNativeBridge =
-  !hasNativeBridge &&
-  typeof window !== 'undefined' &&
-  window.parent &&
-  window.parent !== window &&
-  window.parent.ReactNativeWebView &&
-  typeof window.parent.ReactNativeWebView.postMessage === 'function';
-if (parentHasNativeBridge) {
-  window.ReactNativeWebView = window.parent.ReactNativeWebView;
+const parentNativeBridge = !hasNativeBridge ? getParentReactNativeBridge() : null;
+if (!hasNativeBridge && parentNativeBridge) {
+  window.ReactNativeWebView = parentNativeBridge;
   hasNativeBridge = true;
 }
+const hasParentBridgeProxy = !hasNativeBridge && canProxyThroughParent();
+const usesNativeBridge = hasNativeBridge || hasParentBridgeProxy;
 const NATIVE_TIMEOUT_MS = 12000;
 let nativeRequestTimeoutId = null;
 let hasRenderedTimeline = false;
@@ -336,7 +366,7 @@ let hasTriggeredDirectFallback = false;
 let galleryRenderToken = 0;
 const galleryRenderMap = new Map();
 const galleryStateMap = new Map();
-let hasAppServerReadyForRefresh = !hasNativeBridge;
+let hasAppServerReadyForRefresh = !usesNativeBridge;
 
 let baseBlockHeight = null;
 let baseBlockDate = null;
@@ -952,7 +982,7 @@ function triggerDirectFallback(message, isError = false) {
 }
 
 function handleNativeTimelineMessage(event) {
-  if (!hasNativeBridge) {
+  if (!usesNativeBridge) {
     return;
   }
 
@@ -1013,7 +1043,7 @@ function handleNativeTimelineMessage(event) {
 }
 
 function requestTimelineFromNative() {
-  if (!hasNativeBridge) {
+  if (!usesNativeBridge) {
     loadTimelineDirect();
     return;
   }
@@ -1021,7 +1051,17 @@ function requestTimelineFromNative() {
   showStatus('Loading block data via app Electrum service…');
   try {
     const message = JSON.stringify({ type: 'getagents_latest_block_request' });
-    window.ReactNativeWebView.postMessage(message);
+    let delivered = false;
+    if (hasNativeBridge && window.ReactNativeWebView && typeof window.ReactNativeWebView.postMessage === 'function') {
+      window.ReactNativeWebView.postMessage(message);
+      delivered = true;
+    } else if (hasParentBridgeProxy) {
+      window.parent.postMessage(message, '*');
+      delivered = true;
+    }
+    if (!delivered) {
+      throw new Error('Native bridge unavailable');
+    }
     clearNativeTimeout();
     nativeRequestTimeoutId = setTimeout(() => {
       nativeRequestTimeoutId = null;
@@ -1035,13 +1075,13 @@ function requestTimelineFromNative() {
   }
 }
 
-function initializeTimeline() {
-  if (hasNativeBridge) {
-    requestTimelineFromNative();
-  } else {
-    loadTimelineDirect();
+  function initializeTimeline() {
+    if (usesNativeBridge) {
+      requestTimelineFromNative();
+    } else {
+      loadTimelineDirect();
+    }
   }
-}
 
 function computeSecondRowTargetMs() {
   if (!(baseBlockDate instanceof Date)) {
@@ -1130,7 +1170,7 @@ setInterval(updateTimers, 200);
 
 window.addEventListener('scroll', handleInfiniteScroll, { passive: true });
 
-if (hasNativeBridge) {
+if (usesNativeBridge) {
   window.addEventListener('message', handleNativeTimelineMessage);
   document.addEventListener('message', handleNativeTimelineMessage);
 }

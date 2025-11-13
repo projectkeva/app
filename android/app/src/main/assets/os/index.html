@@ -416,6 +416,19 @@ for(const win in textFiles){
     }
   }
 
+  function parsePayload(raw){
+    if(!raw)return null;
+    let parsed=null;
+    if(typeof raw==='string'){
+      const trimmed=raw.trim();
+      if(!trimmed)return null;
+      try{parsed=JSON.parse(trimmed);}catch(_){return null;}
+    }else if(typeof raw==='object'){
+      parsed=raw;
+    }
+    return parsed;
+  }
+
   function shouldForward(parsed){
     if(!parsed||typeof parsed!=='object')return false;
     const type=parsed.type;
@@ -425,22 +438,37 @@ for(const win in textFiles){
   function handleNativeBridgeMessage(event){
     const raw=event&&event.data;
     if(!raw)return;
-    let parsed=null;
-    if(typeof raw==='string'){
-      const trimmed=raw.trim();
-      if(!trimmed)return;
-      try{parsed=JSON.parse(trimmed);}catch(_){return;}
-    }else if(typeof raw==='object'){
-      parsed=raw;
-    }
+    const parsed=parsePayload(raw);
     if(!shouldForward(parsed)){
       return;
     }
     forwardToIframe(raw);
   }
 
+  function handleIframeRequest(event){
+    const frame=getGetAgentsFrame();
+    if(!frame||event.source!==frame.contentWindow){
+      return;
+    }
+    const parsed=parsePayload(event&&event.data);
+    if(!parsed||parsed.type!=='getagents_latest_block_request'){
+      return;
+    }
+    if(!window.ReactNativeWebView||typeof window.ReactNativeWebView.postMessage!=='function'){
+      console.warn('Get Agents proxy: native bridge unavailable for iframe request');
+      return;
+    }
+    try{
+      const outgoing=typeof event.data==='string'?event.data:JSON.stringify(parsed);
+      window.ReactNativeWebView.postMessage(outgoing);
+    }catch(err){
+      console.warn('Get Agents proxy: failed to relay request to native bridge',err);
+    }
+  }
+
   window.addEventListener('message',handleNativeBridgeMessage);
   document.addEventListener('message',handleNativeBridgeMessage);
+  window.addEventListener('message',handleIframeRequest);
 })();
 </script>
 </body>
