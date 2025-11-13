@@ -400,16 +400,61 @@ for(const win in textFiles){
 }
 
 (function bridgeGetAgentsMessages(){
+  let iframeBridgeAttached=false;
+
   function getGetAgentsFrame(){
     const container=document.getElementById('getAgentsWindow');
     if(!container)return null;
     return container.querySelector('iframe');
   }
 
+  function ensureIframeHasNativeBridge(){
+    const frame=getGetAgentsFrame();
+    if(!frame) return;
+    try{
+      const child=frame.contentWindow;
+      if(!child) return;
+      if(!window.ReactNativeWebView||typeof window.ReactNativeWebView.postMessage!=='function'){
+        return;
+      }
+      const existing=child.ReactNativeWebView;
+      const needsProxy=!existing||existing.__getAgentsProxy!==true;
+      if(!needsProxy) {
+        return;
+      }
+      child.ReactNativeWebView={
+        __getAgentsProxy:true,
+        postMessage(message){
+          try{
+            window.ReactNativeWebView.postMessage(message);
+          }catch(proxyErr){
+            console.warn('Get Agents proxy: failed to relay iframe message to native bridge',proxyErr);
+          }
+        }
+      };
+    }catch(err){
+      console.warn('Get Agents proxy: unable to mirror native bridge into iframe',err);
+    }
+  }
+
+  function attachIframeBridgeSync(){
+    if(!iframeBridgeAttached){
+      iframeBridgeAttached=true;
+      const frame=getGetAgentsFrame();
+      if(frame){
+        frame.addEventListener('load',()=>{
+          setTimeout(ensureIframeHasNativeBridge,0);
+        });
+      }
+    }
+    ensureIframeHasNativeBridge();
+  }
+
   function forwardToIframe(payload){
     const frame=getGetAgentsFrame();
     if(!frame||!frame.contentWindow)return;
     try{
+      ensureIframeHasNativeBridge();
       frame.contentWindow.postMessage(payload,'*');
     }catch(err){
       console.warn('Failed to forward Electrum payload to Get Agents iframe',err);
@@ -459,6 +504,7 @@ for(const win in textFiles){
       return;
     }
     try{
+      ensureIframeHasNativeBridge();
       const outgoing=typeof event.data==='string'?event.data:JSON.stringify(parsed);
       window.ReactNativeWebView.postMessage(outgoing);
     }catch(err){
@@ -469,6 +515,7 @@ for(const win in textFiles){
   window.addEventListener('message',handleNativeBridgeMessage);
   document.addEventListener('message',handleNativeBridgeMessage);
   window.addEventListener('message',handleIframeRequest);
+  attachIframeBridgeSync();
 })();
 </script>
 </body>
