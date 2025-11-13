@@ -707,6 +707,48 @@ function extractTimestampFromHeader(header) {
   return null;
 }
 
+function normalizeLatestHeader(headerSub) {
+  let height = null;
+  let timestamp = null;
+
+  const applyCandidate = candidate => {
+    if (!Number.isFinite(timestamp)) {
+      const parsedTimestamp = extractTimestampFromHeader(candidate);
+      if (Number.isFinite(parsedTimestamp)) {
+        timestamp = parsedTimestamp;
+      }
+    }
+  };
+
+  if (Array.isArray(headerSub)) {
+    if (headerSub.length > 0) {
+      const maybeHeight = Number(headerSub[0]);
+      if (Number.isFinite(maybeHeight)) {
+        height = maybeHeight;
+      }
+    }
+    for (let i = 1; i < headerSub.length; i++) {
+      applyCandidate(headerSub[i]);
+    }
+  } else if (typeof headerSub === 'object' && headerSub !== null) {
+    if (Number.isFinite(headerSub.height)) {
+      height = Number(headerSub.height);
+    }
+    if (headerSub.tip && typeof headerSub.tip === 'object') {
+      if (Number.isFinite(headerSub.tip.timestamp)) {
+        timestamp = Number(headerSub.tip.timestamp);
+      } else {
+        applyCandidate(headerSub.tip);
+      }
+    }
+    applyCandidate(headerSub);
+  } else {
+    applyCandidate(headerSub);
+  }
+
+  return { height, timestamp };
+}
+
 module.exports.estimateFees = async function() {
   const fast = await module.exports.estimateFee(1);
   const medium = await module.exports.estimateFee(18);
@@ -974,19 +1016,12 @@ module.exports.getLatestHeaderSimple = async function() {
   }
 
   if (headerSub) {
-    if (Number.isFinite(headerSub.height)) {
-      height = Number(headerSub.height);
+    const normalized = normalizeLatestHeader(headerSub);
+    if (Number.isFinite(normalized.height)) {
+      height = normalized.height;
     }
-    const tipTimestamp = headerSub.tip && headerSub.tip.timestamp;
-    if (Number.isFinite(tipTimestamp)) {
-      timestamp = Number(tipTimestamp);
-    } else if (Number.isFinite(headerSub.timestamp)) {
-      timestamp = Number(headerSub.timestamp);
-    } else {
-      const parsedTimestamp = extractTimestampFromHeader(headerSub);
-      if (Number.isFinite(parsedTimestamp)) {
-        timestamp = parsedTimestamp;
-      }
+    if (Number.isFinite(normalized.timestamp)) {
+      timestamp = normalized.timestamp;
     }
   }
 
@@ -1007,12 +1042,17 @@ module.exports.getLatestHeaderSimple = async function() {
   }
 
   if (!Number.isFinite(timestamp)) {
-    const header = await mainClient.blockchainBlock_getHeader(height);
-    timestamp = extractTimestampFromHeader(header);
+    try {
+      const header = await mainClient.blockchainBlock_getHeader(height);
+      timestamp = extractTimestampFromHeader(header);
+    } catch (error) {
+      console.warn('BlueElectrum: failed to fetch header for timestamp', error);
+    }
   }
 
   if (!Number.isFinite(timestamp)) {
-    throw new Error('Electrum header timestamp unavailable');
+    console.warn('BlueElectrum: falling back to local clock for latest header timestamp');
+    timestamp = Math.floor(Date.now() / 1000);
   }
 
   return { height, timestamp, host, ssl };
