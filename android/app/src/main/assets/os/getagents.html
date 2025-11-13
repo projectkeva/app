@@ -122,6 +122,12 @@
   }
   .btn:hover { filter: brightness(1.05); }
   .btn:active { transform: translateY(1px); }
+  .btn.disabled,
+  .btn[aria-disabled="true"] {
+    opacity: 0.55;
+    cursor: default;
+    pointer-events: none;
+  }
 
   .entry .title h3 {
     margin: 0;
@@ -314,6 +320,9 @@ const timelineEl = document.getElementById('timeline');
 const STATUS_ID = 'status';
 const REQUEST_METHOD = 'blockchain.headers.subscribe';
 const BLOCK_INTERVAL_MS = 2 * 60 * 1000;
+const GETAGENTS_NAMESPACE_NAME = 'Agent';
+const NAMESPACE_CLICK_THROTTLE_MS = 1000;
+const NAMESPACE_BUTTON_BUSY_LABEL = 'Creating…';
 
 function getParentReactNativeBridge() {
   try {
@@ -367,6 +376,7 @@ let galleryRenderToken = 0;
 const galleryRenderMap = new Map();
 const galleryStateMap = new Map();
 let hasAppServerReadyForRefresh = !usesNativeBridge;
+let pendingNamespaceRequest = null;
 
 let baseBlockHeight = null;
 let baseBlockDate = null;
@@ -374,6 +384,7 @@ let entriesLoaded = 0;
 let isLoadingMore = false;
 let autoReloadTriggered = false;
 let secondRowHadPositiveTime = false;
+let lastNamespaceClickTs = 0;
 
 const INITIAL_BATCH_COUNT = 11; // current block + 10 future blocks
 const LOAD_MORE_BATCH_COUNT = 10;
@@ -1039,6 +1050,95 @@ function handleNativeTimelineMessage(event) {
     }
     console.error('Native Electrum bridge reported error', parsed.error);
     triggerDirectFallback('App Electrum service unavailable. Connecting directly to Kevacoin ElectrumX…');
+  } else if (parsed.type === 'getagents_create_namespace_result') {
+    handleNamespaceCreationResponse(parsed);
+  }
+}
+
+function setGetAgentsButtonBusy(button, isBusy) {
+  if (!button) {
+    return;
+  }
+  if (isBusy) {
+    if (!button.dataset.originalLabel) {
+      button.dataset.originalLabel = button.textContent || '';
+    }
+    button.textContent = NAMESPACE_BUTTON_BUSY_LABEL;
+    button.classList.add('disabled');
+    button.setAttribute('aria-disabled', 'true');
+  } else {
+    const fallback = button.dataset.originalLabel || 'Get Agents';
+    button.textContent = fallback;
+    button.classList.remove('disabled');
+    button.removeAttribute('aria-disabled');
+  }
+}
+
+function requestNamespaceCreation(button, blockLabel) {
+  if (!button) {
+    return;
+  }
+  const now = Date.now();
+  if (now - lastNamespaceClickTs < NAMESPACE_CLICK_THROTTLE_MS) {
+    return;
+  }
+  lastNamespaceClickTs = now;
+
+  if (!usesNativeBridge || !window.ReactNativeWebView || typeof window.ReactNativeWebView.postMessage !== 'function') {
+    alert('Namespace creation is only available inside the Kevacoin app.');
+    return;
+  }
+
+  if (pendingNamespaceRequest) {
+    return;
+  }
+
+  const requestId = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+  pendingNamespaceRequest = {
+    id: requestId,
+    button,
+    blockLabel,
+  };
+  setGetAgentsButtonBusy(button, true);
+
+  try {
+    window.ReactNativeWebView.postMessage(
+      JSON.stringify({
+        type: 'getagents_create_namespace',
+        payload: {
+          name: GETAGENTS_NAMESPACE_NAME,
+          requestId,
+        },
+      }),
+    );
+  } catch (error) {
+    pendingNamespaceRequest = null;
+    setGetAgentsButtonBusy(button, false);
+    alert('Unable to contact the Kevacoin app: ' + ((error && error.message) || error));
+  }
+}
+
+function handleNamespaceCreationResponse(parsed) {
+  if (!pendingNamespaceRequest) {
+    return;
+  }
+  const payload = parsed && parsed.payload ? parsed.payload : {};
+  const expectedId = pendingNamespaceRequest.id || null;
+  if (expectedId && payload.requestId && payload.requestId !== expectedId) {
+    return;
+  }
+  const currentRequest = pendingNamespaceRequest;
+  pendingNamespaceRequest = null;
+  setGetAgentsButtonBusy(currentRequest.button, false);
+
+  if (payload.success) {
+    const namespaceId = payload.namespaceId || 'unknown';
+    const txText = payload.txid ? `\nTX: ${payload.txid}` : '';
+    const blockLabel = currentRequest.blockLabel ? `\n${currentRequest.blockLabel}` : '';
+    alert(`Namespace "${GETAGENTS_NAMESPACE_NAME}" created!${blockLabel}\nID: ${namespaceId}${txText}`);
+  } else {
+    const errorMessage = payload.error || 'Unknown error';
+    alert('Namespace creation failed: ' + errorMessage);
   }
 }
 
@@ -1198,7 +1298,7 @@ timelineEl.addEventListener('click', (event) => {
   }
   const entry = btn.closest('.entry');
   const block = entry?.querySelector('.title p')?.textContent?.trim() || 'BLOCK ?';
-  alert('Get Agents @ ' + block);
+  requestNamespaceCreation(btn, block);
 });
 </script>
 
