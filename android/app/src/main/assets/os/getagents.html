@@ -784,13 +784,16 @@ function buildEntry(height, date, index) {
   const contentClasses = 'content content-gallery';
   const contentHtml = `<div class="avatar-gallery" data-block="${height}"><div class="avatar-loading">正在生成头像…</div></div>`;
   const timerHtml = showTimer ? '<span class="timer" aria-label="countdown based on left time">⏳ 00:00</span>' : '';
+  const isFirstEntry = Number.isFinite(index) && index === 0;
+  const buttonLabel = isFirstEntry ? 'Refresh' : 'Get Agents';
+  const buttonDataAttr = isFirstEntry ? ' data-action="refresh"' : '';
 
   entry.innerHTML = `
     <div class="title">
       <h3>${formatDateTime(date)}</h3>
       <div class="live">
         ${timerHtml}
-        <a href="#" class="btn btn-get">Get Agents</a>
+        <a href="#" class="btn btn-get"${buttonDataAttr}>${buttonLabel}</a>
       </div>
       <p>BLOCK ${formatBlock(height)}</p>
     </div>
@@ -1081,6 +1084,10 @@ timelineEl.addEventListener('click', (event) => {
   const btn = event.target.closest('.btn-get');
   if (!btn) return;
   event.preventDefault();
+  if (btn.dataset.action === 'refresh') {
+    window.location.reload();
+    return;
+  }
   const entry = btn.closest('.entry');
   const block = entry?.querySelector('.title p')?.textContent?.trim() || 'BLOCK ?';
   alert('Get Agents @ ' + block);
