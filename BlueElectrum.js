@@ -23,6 +23,7 @@ let wasConnectedAtLeastOnce = false;
 let serverName = false;
 let disableBatching = false;
 let currentPeer = null;
+let pendingConnectPromise = null;
 
 function getCurrentPeer() {
   return currentPeer;
@@ -103,7 +104,20 @@ async function connectMain() {
   }
 }
 
-connectMain();
+function ensureConnectMainRunning() {
+  if (!pendingConnectPromise) {
+    pendingConnectPromise = (async () => {
+      try {
+        await connectMain();
+      } finally {
+        pendingConnectPromise = null;
+      }
+    })();
+  }
+  return pendingConnectPromise;
+}
+
+ensureConnectMainRunning();
 
 /**
  * Returns random hardcoded electrum server guaranteed to work
@@ -603,6 +617,7 @@ module.exports.multiGetTransactionInfoByTxid = async function(txids, batchsize, 
 module.exports.waitTillConnected = async function() {
   let waitTillConnectedInterval = false;
   let retriesCounter = 0;
+  ensureConnectMainRunning();
   return new Promise(function(resolve, reject) {
     waitTillConnectedInterval = setInterval(() => {
       if (mainConnected) {
@@ -616,6 +631,10 @@ module.exports.waitTillConnected = async function() {
         resolve(true);
       }
 
+      if (!mainConnected && !pendingConnectPromise) {
+        ensureConnectMainRunning();
+      }
+
       if (retriesCounter++ >= 30) {
         clearInterval(waitTillConnectedInterval);
         reject(new Error('Waiting for Electrum connection timeout'));
@@ -626,9 +645,10 @@ module.exports.waitTillConnected = async function() {
 
 async function ensureElectrumClientReady() {
   if (!mainClient || !mainConnected) {
+    ensureConnectMainRunning();
     await module.exports.waitTillConnected();
   }
-  if (!mainClient) {
+  if (!mainClient || !mainConnected) {
     throw new Error('Electrum client is not connected');
   }
 }
