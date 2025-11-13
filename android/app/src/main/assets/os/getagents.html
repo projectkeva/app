@@ -773,15 +773,21 @@ function buildEntry(height, date, index) {
     entry.dataset.index = String(index);
   }
 
+  const showTimer = !Number.isFinite(index) ? true : index > 0;
+  if (!showTimer) {
+    entry.dataset.timerDisabled = 'true';
+  }
+
   const cardClasses = 'card card-gallery';
   const contentClasses = 'content content-gallery';
   const contentHtml = `<div class="avatar-gallery" data-block="${height}"><div class="avatar-loading">正在生成头像…</div></div>`;
+  const timerHtml = showTimer ? '<span class="timer" aria-label="countdown based on left time">⏳ 00:00</span>' : '';
 
   entry.innerHTML = `
     <div class="title">
       <h3>${formatDateTime(date)}</h3>
       <div class="live">
-        <span class="timer" aria-label="countdown based on left time">⏳ 00:00</span>
+        ${timerHtml}
         <a href="#" class="btn btn-get">Get Agents</a>
       </div>
       <p>BLOCK ${formatBlock(height)}</p>
@@ -1008,6 +1014,9 @@ function parseBaseTime(text) {
 function updateTimers() {
   const now = new Date();
   document.querySelectorAll('.entry').forEach(entry => {
+    if (entry.dataset.timerDisabled === 'true') {
+      return;
+    }
     const h3 = entry.querySelector('.title h3');
     const timerEl = entry.querySelector('.timer');
     if (!h3 || !timerEl) return;
