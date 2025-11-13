@@ -138,6 +138,11 @@
     letter-spacing: .5px;
   }
 
+  .entry .title p.block-label-highlight {
+    color: var(--accent-2);
+    font-weight: 700;
+  }
+
   .entry .body {
     float: right;
     width: 66%;
@@ -776,7 +781,16 @@ function buildEntry(height, date, index) {
     entry.dataset.index = String(index);
   }
 
-  const showTimer = !Number.isFinite(index) ? true : index > 0;
+  const timestampMs = date instanceof Date ? date.getTime() : NaN;
+  if (Number.isFinite(timestampMs)) {
+    entry.dataset.timestampMs = String(timestampMs);
+  }
+
+  const isFirstEntry = Number.isFinite(index) && index === 0;
+  const timerMode = isFirstEntry ? 'elapsed' : 'countdown';
+  entry.dataset.timerMode = timerMode;
+
+  const showTimer = !Number.isFinite(index) ? true : index >= 0;
   if (!showTimer) {
     entry.dataset.timerDisabled = 'true';
   }
@@ -784,10 +798,11 @@ function buildEntry(height, date, index) {
   const cardClasses = 'card card-gallery';
   const contentClasses = 'content content-gallery';
   const contentHtml = `<div class="avatar-gallery" data-block="${height}"><div class="avatar-loading">正在生成头像…</div></div>`;
-  const timerHtml = showTimer ? '<span class="timer" aria-label="countdown based on left time">⏳ 00:00</span>' : '';
-  const isFirstEntry = Number.isFinite(index) && index === 0;
+  const timerEmoji = isFirstEntry ? '⏱' : '⏳';
+  const timerHtml = showTimer ? `<span class="timer" aria-label="countdown based on left time">${timerEmoji} 00:00</span>` : '';
   const buttonLabel = isFirstEntry ? 'Refresh' : 'Get Agents';
   const buttonDataAttr = isFirstEntry ? ' data-action="refresh"' : '';
+  const blockLabelClass = isFirstEntry ? 'block-label-highlight' : '';
 
   entry.innerHTML = `
     <div class="title">
@@ -796,7 +811,7 @@ function buildEntry(height, date, index) {
         ${timerHtml}
         <a href="#" class="btn btn-get"${buttonDataAttr}>${buttonLabel}</a>
       </div>
-      <p>BLOCK ${formatBlock(height)}</p>
+      <p class="${blockLabelClass}">BLOCK ${formatBlock(height)}</p>
     </div>
     <div class="body">
       <div class="${cardClasses}">
@@ -1040,6 +1055,21 @@ function updateTimers() {
     }
     const timerEl = entry.querySelector('.timer');
     if (!timerEl) {
+      return;
+    }
+
+    const timerMode = entry.dataset.timerMode || 'countdown';
+    if (timerMode === 'elapsed') {
+      const startMs = Number(entry.dataset.timestampMs);
+      if (!Number.isFinite(startMs)) {
+        timerEl.textContent = '⏱ 00:00';
+        return;
+      }
+      let diff = nowMs - startMs;
+      if (diff < 0) diff = 0;
+      const mm = String(Math.floor(diff / 60000)).padStart(2, '0');
+      const ss = String(Math.floor((diff % 60000) / 1000)).padStart(2, '0');
+      timerEl.textContent = '⏱ ' + mm + ':' + ss;
       return;
     }
 
