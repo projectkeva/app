@@ -1043,7 +1043,11 @@ function updateTimers() {
     const entryIndex = Number(entry.dataset.index);
     const targetMs = computeTargetMsForEntry(entryIndex);
     if (!Number.isFinite(targetMs)) {
-      timerEl.textContent = '⏳ 99:99';
+      if (Number.isFinite(entryIndex) && entryIndex === 1) {
+        timerEl.textContent = '⏳ 00:30';
+      } else {
+        timerEl.textContent = '⏳ 99:99';
+      }
       return;
     }
 
@@ -1080,11 +1084,18 @@ if (document.readyState === 'loading') {
   initializeTimeline();
 }
 
+let lastRefreshClickTs = 0;
+
 timelineEl.addEventListener('click', (event) => {
   const btn = event.target.closest('.btn-get');
   if (!btn) return;
   event.preventDefault();
   if (btn.dataset.action === 'refresh') {
+    const now = Date.now();
+    if (now - lastRefreshClickTs < 1000) {
+      return;
+    }
+    lastRefreshClickTs = now;
     window.location.reload();
     return;
   }
