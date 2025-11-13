@@ -1017,18 +1017,36 @@ function updateTimers() {
     if (entry.dataset.timerDisabled === 'true') {
       return;
     }
-    const h3 = entry.querySelector('.title h3');
     const timerEl = entry.querySelector('.timer');
-    if (!h3 || !timerEl) return;
+    if (!timerEl) {
+      return;
+    }
+
+    if (baseBlockDate === null) {
+      timerEl.textContent = '⏳ 99:99';
+      return;
+    }
+
+    const h3 = entry.querySelector('.title h3');
+    if (!h3) {
+      timerEl.textContent = '⏳ 99:99';
+      return;
+    }
+
     const base = parseBaseTime(h3.textContent);
-    if (!base) return;
-    const target = new Date(base.getTime() + 60 * 1000);
+    if (!base) {
+      timerEl.textContent = '⏳ 99:99';
+      return;
+    }
+
+    const target = new Date(base.getTime() + 2 * 60 * 1000);
     let diff = target - now;
     const rawDiff = diff;
     if (diff < 0) diff = 0;
     const mm = String(Math.floor(diff / 60000)).padStart(2, '0');
     const ss = String(Math.floor((diff % 60000) / 1000)).padStart(2, '0');
     timerEl.textContent = '⏳ ' + mm + ':' + ss;
+
     const entryIndex = Number(entry.dataset.index);
     if (!autoReloadTriggered && Number.isFinite(entryIndex) && entryIndex === 1 && rawDiff <= 0) {
       autoReloadTriggered = true;
