@@ -787,10 +787,11 @@ function buildEntry(height, date, index) {
   }
 
   const isFirstEntry = Number.isFinite(index) && index === 0;
+  const enableLiveControls = Number.isFinite(index) ? index <= 1 : true;
   const timerMode = isFirstEntry ? 'elapsed' : 'countdown';
   entry.dataset.timerMode = timerMode;
 
-  const showTimer = !Number.isFinite(index) ? true : index >= 0;
+  const showTimer = enableLiveControls && (!Number.isFinite(index) ? true : index >= 0);
   if (!showTimer) {
     entry.dataset.timerDisabled = 'true';
   }
@@ -800,17 +801,16 @@ function buildEntry(height, date, index) {
   const contentHtml = `<div class="avatar-gallery" data-block="${height}"><div class="avatar-loading">正在生成头像…</div></div>`;
   const timerEmoji = isFirstEntry ? '⏱' : '⏳';
   const timerHtml = showTimer ? `<span class="timer" aria-label="countdown based on left time">${timerEmoji} 00:00</span>` : '';
+  const showButton = enableLiveControls;
   const buttonLabel = isFirstEntry ? 'Refresh' : 'Get Agents';
   const buttonDataAttr = isFirstEntry ? ' data-action="refresh"' : '';
+  const buttonHtml = showButton ? `<a href="#" class="btn btn-get"${buttonDataAttr}>${buttonLabel}</a>` : '';
   const blockLabelClass = isFirstEntry ? 'block-label-highlight' : '';
 
   entry.innerHTML = `
     <div class="title">
       <h3>${formatDateTime(date)}</h3>
-      <div class="live">
-        ${timerHtml}
-        <a href="#" class="btn btn-get"${buttonDataAttr}>${buttonLabel}</a>
-      </div>
+      ${enableLiveControls ? `<div class="live">${timerHtml}${buttonHtml}</div>` : ''}
       <p class="${blockLabelClass}">BLOCK ${formatBlock(height)}</p>
     </div>
     <div class="body">
