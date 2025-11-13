@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -300,7 +300,7 @@
 <body>
 <div class="wrap">
   <div class="timeline" id="timeline">
-    <div class="status" id="status">正在读取最新区块信息…</div>
+    <div class="status" id="status">Loading the latest block data…</div>
   </div>
 </div>
 
@@ -611,7 +611,7 @@ function addLoadMoreControl(gallery, token) {
   loadMore.className = 'avatar-item avatar-load-more';
   loadMore.setAttribute('role', 'button');
   loadMore.setAttribute('tabindex', '0');
-  loadMore.setAttribute('aria-label', '加载更多头像');
+  loadMore.setAttribute('aria-label', 'Load more avatars');
 
   const icon = document.createElement('div');
   icon.className = 'avatar-load-more-icon';
@@ -648,7 +648,7 @@ async function loadAvatarBatch(gallery, blockHeight, token, startIndex, count) {
 
   const loader = document.createElement('div');
   loader.className = 'avatar-loading';
-  loader.textContent = '正在生成头像…';
+  loader.textContent = 'Generating avatars…';
   gallery.appendChild(loader);
 
   const indices = Array.from({ length: count }, (_, i) => startIndex + i);
@@ -684,7 +684,7 @@ async function loadAvatarBatch(gallery, blockHeight, token, startIndex, count) {
         const label = document.createElement('div');
         label.className = 'avatar-id';
         label.textContent = agentIdForIndex(blockHeight, result.index);
-        fallback.title = '头像生成失败';
+        fallback.title = 'Avatar generation failed';
         fallback.appendChild(placeholder);
         fallback.appendChild(label);
         gallery.appendChild(fallback);
@@ -694,7 +694,9 @@ async function loadAvatarBatch(gallery, blockHeight, token, startIndex, count) {
     if (successCount === 0) {
       const errorEl = document.createElement('div');
       errorEl.className = 'avatar-error';
-      errorEl.textContent = startIndex === 0 ? '无法生成代理头像，请稍后重试。' : '无法加载更多头像，请稍后重试。';
+      errorEl.textContent = startIndex === 0
+        ? 'Unable to generate agent avatars. Please try again later.'
+        : 'Unable to load more avatars. Please try again later.';
       gallery.appendChild(errorEl);
       state.loading = false;
       return;
@@ -708,7 +710,9 @@ async function loadAvatarBatch(gallery, blockHeight, token, startIndex, count) {
     if (galleryRenderMap.get(gallery) === token) {
       const errorEl = document.createElement('div');
       errorEl.className = 'avatar-error';
-      errorEl.textContent = startIndex === 0 ? '无法生成代理头像，请稍后重试。' : '无法加载更多头像，请稍后重试。';
+      errorEl.textContent = startIndex === 0
+        ? 'Unable to generate agent avatars. Please try again later.'
+        : 'Unable to load more avatars. Please try again later.';
       gallery.appendChild(errorEl);
     }
   } finally {
@@ -798,11 +802,11 @@ function buildEntry(height, date, index) {
 
   const cardClasses = 'card card-gallery';
   const contentClasses = 'content content-gallery';
-  const contentHtml = `<div class="avatar-gallery" data-block="${height}"><div class="avatar-loading">正在生成头像…</div></div>`;
+  const contentHtml = `<div class="avatar-gallery" data-block="${height}"><div class="avatar-loading">Generating avatars…</div></div>`;
   const timerEmoji = isFirstEntry ? '⏱' : '⏳';
   const timerHtml = showTimer ? `<span class="timer" aria-label="countdown based on left time">${timerEmoji} 00:00</span>` : '';
   const showButton = enableLiveControls;
-  const buttonLabel = isFirstEntry ? 'Refresh' : 'Get Agents';
+  const buttonLabel = isFirstEntry ? 'Reload ID' : 'Get Agents';
   const buttonDataAttr = isFirstEntry ? ' data-action="refresh"' : '';
   const buttonHtml = showButton ? `<a href="#" class="btn btn-get"${buttonDataAttr}>${buttonLabel}</a>` : '';
   const blockLabelClass = isFirstEntry ? 'block-label-highlight' : '';
@@ -885,13 +889,13 @@ function showStatus(message, isError = false) {
 }
 
 async function loadTimelineDirect(statusMessage, isError = false) {
-  showStatus(statusMessage || '正在连接 Kevacoin ElectrumX…', isError);
+  showStatus(statusMessage || 'Connecting to Kevacoin ElectrumX…', isError);
   try {
     const latest = await fetchLatestBlock();
     applyTimelineData(latest.height, latest.timestamp);
   } catch (error) {
     console.error('Failed to load block data', error);
-    showStatus('无法加载区块信息，请稍后重试。', true);
+    showStatus('Unable to load block data. Please try again later.', true);
   }
 }
 
@@ -933,7 +937,7 @@ function triggerDirectFallback(message, isError = false) {
   }
   clearNativeTimeout();
   hasTriggeredDirectFallback = true;
-  loadTimelineDirect(message || '正在直接连接 Kevacoin ElectrumX…', isError);
+  loadTimelineDirect(message || 'Connecting directly to Kevacoin ElectrumX…', isError);
 }
 
 function handleNativeTimelineMessage(event) {
@@ -984,7 +988,7 @@ function handleNativeTimelineMessage(event) {
       applyTimelineData(payload.height, payload.timestamp);
     } catch (error) {
       console.error('Invalid payload from native Electrum bridge', error);
-      triggerDirectFallback('应用返回的数据无效，正在直接连接 Kevacoin ElectrumX…', true);
+      triggerDirectFallback('Invalid response from app. Connecting directly to Kevacoin ElectrumX…', true);
     }
   } else if (parsed.type === 'getagents_latest_block_error') {
     clearNativeTimeout();
@@ -993,7 +997,7 @@ function handleNativeTimelineMessage(event) {
       return;
     }
     console.error('Native Electrum bridge reported error', parsed.error);
-    triggerDirectFallback('应用 Electrum 服务不可用，正在直接连接 Kevacoin ElectrumX…');
+    triggerDirectFallback('App Electrum service unavailable. Connecting directly to Kevacoin ElectrumX…');
   }
 }
 
@@ -1003,7 +1007,7 @@ function requestTimelineFromNative() {
     return;
   }
 
-  showStatus('正在通过应用 Electrum 服务加载区块…');
+  showStatus('Loading block data via app Electrum service…');
   try {
     const message = JSON.stringify({ type: 'getagents_latest_block_request' });
     window.ReactNativeWebView.postMessage(message);
@@ -1011,12 +1015,12 @@ function requestTimelineFromNative() {
     nativeRequestTimeoutId = setTimeout(() => {
       nativeRequestTimeoutId = null;
       if (!hasRenderedTimeline) {
-        triggerDirectFallback('等待应用响应超时，正在直接连接 Kevacoin ElectrumX…');
+        triggerDirectFallback('App response timed out. Connecting directly to Kevacoin ElectrumX…');
       }
     }, NATIVE_TIMEOUT_MS);
   } catch (error) {
     console.error('Failed to request Electrum data from native bridge', error);
-    triggerDirectFallback('无法通过应用加载区块信息，正在直接连接 Kevacoin ElectrumX…', true);
+    triggerDirectFallback('Unable to load block data via app. Connecting directly to Kevacoin ElectrumX…', true);
   }
 }
 
