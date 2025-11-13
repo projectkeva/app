@@ -398,6 +398,50 @@ for(const win in textFiles){
     loadText(lang,`${win}Window`,textFiles[win][lang]);
   }
 }
+
+(function bridgeGetAgentsMessages(){
+  function getGetAgentsFrame(){
+    const container=document.getElementById('getAgentsWindow');
+    if(!container)return null;
+    return container.querySelector('iframe');
+  }
+
+  function forwardToIframe(payload){
+    const frame=getGetAgentsFrame();
+    if(!frame||!frame.contentWindow)return;
+    try{
+      frame.contentWindow.postMessage(payload,'*');
+    }catch(err){
+      console.warn('Failed to forward Electrum payload to Get Agents iframe',err);
+    }
+  }
+
+  function shouldForward(parsed){
+    if(!parsed||typeof parsed!=='object')return false;
+    const type=parsed.type;
+    return type==='getagents_latest_block_response'||type==='getagents_latest_block_error';
+  }
+
+  function handleNativeBridgeMessage(event){
+    const raw=event&&event.data;
+    if(!raw)return;
+    let parsed=null;
+    if(typeof raw==='string'){
+      const trimmed=raw.trim();
+      if(!trimmed)return;
+      try{parsed=JSON.parse(trimmed);}catch(_){return;}
+    }else if(typeof raw==='object'){
+      parsed=raw;
+    }
+    if(!shouldForward(parsed)){
+      return;
+    }
+    forwardToIframe(raw);
+  }
+
+  window.addEventListener('message',handleNativeBridgeMessage);
+  document.addEventListener('message',handleNativeBridgeMessage);
+})();
 </script>
 </body>
 </html>
