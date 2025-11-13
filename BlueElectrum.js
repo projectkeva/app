@@ -941,21 +941,33 @@ module.exports.getLatestHeaderSimple = async function() {
   let height = null;
   let timestamp = null;
 
+  let headerSub = null;
   try {
-    const headerSub = await mainClient.blockchainHeaders_subscribe(false);
-    if (headerSub) {
-      if (Number.isFinite(headerSub.height)) {
-        height = Number(headerSub.height);
-      }
-      const tipTimestamp = headerSub.tip && headerSub.tip.timestamp;
-      if (Number.isFinite(tipTimestamp)) {
-        timestamp = Number(tipTimestamp);
-      } else if (Number.isFinite(headerSub.timestamp)) {
-        timestamp = Number(headerSub.timestamp);
+    headerSub = await mainClient.blockchainHeaders_subscribe(true);
+  } catch (rawError) {
+    console.warn('BlueElectrum: raw header subscribe failed, retrying without raw payload', rawError);
+    try {
+      headerSub = await mainClient.blockchainHeaders_subscribe(false);
+    } catch (error) {
+      console.warn('BlueElectrum: failed to subscribe for latest header', error);
+    }
+  }
+
+  if (headerSub) {
+    if (Number.isFinite(headerSub.height)) {
+      height = Number(headerSub.height);
+    }
+    const tipTimestamp = headerSub.tip && headerSub.tip.timestamp;
+    if (Number.isFinite(tipTimestamp)) {
+      timestamp = Number(tipTimestamp);
+    } else if (Number.isFinite(headerSub.timestamp)) {
+      timestamp = Number(headerSub.timestamp);
+    } else {
+      const parsedTimestamp = extractTimestampFromHeader(headerSub);
+      if (Number.isFinite(parsedTimestamp)) {
+        timestamp = parsedTimestamp;
       }
     }
-  } catch (error) {
-    console.warn('BlueElectrum: failed to subscribe for latest header', error);
   }
 
   if (!Number.isFinite(height)) {
