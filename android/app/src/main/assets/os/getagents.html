@@ -1048,7 +1048,9 @@ function updateTimers() {
     timerEl.textContent = '⏳ ' + mm + ':' + ss;
 
     const entryIndex = Number(entry.dataset.index);
-    if (!autoReloadTriggered && Number.isFinite(entryIndex) && entryIndex === 1 && rawDiff <= 0) {
+    const isSecondEntry = Number.isFinite(entryIndex) && entryIndex === 1;
+    const isTimerZero = rawDiff <= 0 && mm === '00' && ss === '00';
+    if (!autoReloadTriggered && isSecondEntry && isTimerZero) {
       autoReloadTriggered = true;
       setTimeout(() => {
         window.location.reload();
