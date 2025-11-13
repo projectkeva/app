@@ -64,13 +64,12 @@ html, body { margin:0; padding:0; height:100%; background:#000!important;}
 .start-menu input[type="checkbox"]{width:16px;height:16px;accent-color:#6ea0ff;}
 @media(max-width:768px){.main-window{width:100vw;height:100vh;}}
 /* ==== Agents ==== */
-#agentsWindow,
-#getAgentsWindow {
+#agentsWindow {
   width: 80%;
   height: 80%;
   max-width: 1600px;
   max-height: 950px;
-  background: #000; 
+  background: #000;
   border: 1px solid #333;
   border-radius: 8px;
   box-shadow: 0 4px 30px rgba(0,0,0,0.4);
@@ -82,21 +81,19 @@ html, body { margin:0; padding:0; height:100%; background:#000!important;}
   z-index: 100;
 }
 
-#agentsWindow .content,
-#getAgentsWindow .content {
+#agentsWindow .content {
   position: absolute;
   top: 32px;
   left: 0;
   right: 0;
-  height: calc(100% - 32px); 
+  height: calc(100% - 32px);
   padding: 0;
   margin: 0;
   background: #000;
-  overflow: hidden; 
+  overflow: hidden;
 }
 
-#agentsWindow iframe,
-#getAgentsWindow iframe {
+#agentsWindow iframe {
   position: absolute;
   top: 0;
   left: 0;
@@ -109,7 +106,7 @@ html, body { margin:0; padding:0; height:100%; background:#000!important;}
 
 :root{--scale:1;--taskbar-height:48px}
 /* === KEVA mobile layout unify (injected) === */
-#readmeWindow, #downloadWindow, #agentsWindow, #getAgentsWindow {
+#readmeWindow, #downloadWindow, #agentsWindow {
   width: 80% !important;
   height: 80% !important;
   max-width: 1600px !important;
@@ -122,7 +119,7 @@ html, body { margin:0; padding:0; height:100%; background:#000!important;}
   background: #000 !important;
   display: none;
 }
-#readmeWindow .content, #downloadWindow .content, #agentsWindow .content, #getAgentsWindow .content {
+#readmeWindow .content, #downloadWindow .content, #agentsWindow .content {
   position: absolute !important;
   top: 32px !important;
   left: 0 !important; right: 0 !important;
@@ -132,10 +129,10 @@ html, body { margin:0; padding:0; height:100%; background:#000!important;}
   background: #000;
   color: #cfffff;
 }
-#agentsWindow .content, #getAgentsWindow .content { padding: 0; overflow: hidden; } /* iframe 全铺 */
-#agentsWindow iframe, #getAgentsWindow iframe { width: 100%; height: 100%; border: 0; display: block; background: #000; }
+#agentsWindow .content { padding: 0; overflow: hidden; } /* iframe 全铺 */
+#agentsWindow iframe { width: 100%; height: 100%; border: 0; display: block; background: #000; }
 @media (max-width: 768px) {
-  #readmeWindow, #downloadWindow, #agentsWindow, #getAgentsWindow { width: 95% !important; height: 85% !important; }
+  #readmeWindow, #downloadWindow, #agentsWindow { width: 95% !important; height: 85% !important; }
 }
 
 </style>
@@ -207,14 +204,6 @@ window.addEventListener('load', updateDesktopScale);
     <iframe src="agents/index.html" style="width:100%;height:100%;border:0;"></iframe>
   </div>
 </div>
-
-<div class="notepad-window" id="getAgentsWindow">
-  <div class="title-bar"><span>Get Agents</span><button class="close-btn">×</button></div>
-  <div class="content" style="padding:0;">
-    <iframe src="getagents.html" style="width:100%;height:100%;border:0;"></iframe>
-  </div>
-</div>
-
 
     <div class="start-menu" id="startMenu" aria-hidden="true">
       <form>
@@ -290,7 +279,11 @@ document.querySelectorAll('.icon').forEach(icon=>{
     } else if(app==='id'){
       document.getElementById('agentsWindow').style.display='block';
     } else if(app==='getagents'){
-      document.getElementById('getAgentsWindow').style.display='block';
+      if(window.ReactNativeWebView && typeof window.ReactNativeWebView.postMessage==='function'){
+        window.ReactNativeWebView.postMessage('open_getagents');
+      }else{
+        alert('Get Agents is only available inside the Kevacoin app.');
+      }
     } else if(links[app]){
       window.open(links[app],'_blank');
     }
@@ -399,128 +392,6 @@ for(const win in textFiles){
   }
 }
 
-(function bridgeGetAgentsMessages(){
-  let iframeBridgeAttached=false;
-
-  function getGetAgentsFrame(){
-    const container=document.getElementById('getAgentsWindow');
-    if(!container)return null;
-    return container.querySelector('iframe');
-  }
-
-  function ensureIframeHasNativeBridge(){
-    const frame=getGetAgentsFrame();
-    if(!frame) return;
-    try{
-      const child=frame.contentWindow;
-      if(!child) return;
-      if(!window.ReactNativeWebView||typeof window.ReactNativeWebView.postMessage!=='function'){
-        return;
-      }
-      const existing=child.ReactNativeWebView;
-      const needsProxy=!existing||existing.__getAgentsProxy!==true;
-      if(!needsProxy) {
-        return;
-      }
-      child.ReactNativeWebView={
-        __getAgentsProxy:true,
-        postMessage(message){
-          try{
-            window.ReactNativeWebView.postMessage(message);
-          }catch(proxyErr){
-            console.warn('Get Agents proxy: failed to relay iframe message to native bridge',proxyErr);
-          }
-        }
-      };
-    }catch(err){
-      console.warn('Get Agents proxy: unable to mirror native bridge into iframe',err);
-    }
-  }
-
-  function attachIframeBridgeSync(){
-    if(!iframeBridgeAttached){
-      iframeBridgeAttached=true;
-      const frame=getGetAgentsFrame();
-      if(frame){
-        frame.addEventListener('load',()=>{
-          setTimeout(ensureIframeHasNativeBridge,0);
-        });
-      }
-    }
-    ensureIframeHasNativeBridge();
-  }
-
-  function forwardToIframe(payload){
-    const frame=getGetAgentsFrame();
-    if(!frame||!frame.contentWindow)return;
-    try{
-      ensureIframeHasNativeBridge();
-      frame.contentWindow.postMessage(payload,'*');
-    }catch(err){
-      console.warn('Failed to forward Electrum payload to Get Agents iframe',err);
-    }
-  }
-
-  function parsePayload(raw){
-    if(!raw)return null;
-    let parsed=null;
-    if(typeof raw==='string'){
-      const trimmed=raw.trim();
-      if(!trimmed)return null;
-      try{parsed=JSON.parse(trimmed);}catch(_){return null;}
-    }else if(typeof raw==='object'){
-      parsed=raw;
-    }
-    return parsed;
-  }
-
-  function shouldForward(parsed){
-    if(!parsed||typeof parsed!=='object')return false;
-    const type=parsed.type;
-    return type==='getagents_latest_block_response'||
-      type==='getagents_latest_block_error'||
-      type==='getagents_create_namespace_result';
-  }
-
-  function handleNativeBridgeMessage(event){
-    const raw=event&&event.data;
-    if(!raw)return;
-    const parsed=parsePayload(raw);
-    if(!shouldForward(parsed)){
-      return;
-    }
-    forwardToIframe(raw);
-  }
-
-  function handleIframeRequest(event){
-    const frame=getGetAgentsFrame();
-    if(!frame||event.source!==frame.contentWindow){
-      return;
-    }
-    const parsed=parsePayload(event&&event.data);
-    if(!parsed||
-      (parsed.type!=='getagents_latest_block_request'&&
-       parsed.type!=='getagents_create_namespace')){
-      return;
-    }
-    if(!window.ReactNativeWebView||typeof window.ReactNativeWebView.postMessage!=='function'){
-      console.warn('Get Agents proxy: native bridge unavailable for iframe request');
-      return;
-    }
-    try{
-      ensureIframeHasNativeBridge();
-      const outgoing=typeof event.data==='string'?event.data:JSON.stringify(parsed);
-      window.ReactNativeWebView.postMessage(outgoing);
-    }catch(err){
-      console.warn('Get Agents proxy: failed to relay request to native bridge',err);
-    }
-  }
-
-  window.addEventListener('message',handleNativeBridgeMessage);
-  document.addEventListener('message',handleNativeBridgeMessage);
-  window.addEventListener('message',handleIframeRequest);
-  attachIframeBridgeSync();
-})();
 </script>
 </body>
 </html>
