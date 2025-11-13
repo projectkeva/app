@@ -327,6 +327,7 @@ let baseBlockDate = null;
 let entriesLoaded = 0;
 let isLoadingMore = false;
 let autoReloadTriggered = false;
+let secondRowHadPositiveTime = false;
 
 const INITIAL_BATCH_COUNT = 11; // current block + 10 future blocks
 const LOAD_MORE_BATCH_COUNT = 10;
@@ -842,6 +843,7 @@ function resetTimeline(baseHeight, baseDate) {
   baseBlockDate = baseDate;
   entriesLoaded = 0;
   autoReloadTriggered = false;
+  secondRowHadPositiveTime = false;
   timelineEl.innerHTML = '';
   galleryRenderMap.clear();
   galleryStateMap.clear();
@@ -856,6 +858,7 @@ function showStatus(message, isError = false) {
   entriesLoaded = 0;
   isLoadingMore = false;
   autoReloadTriggered = false;
+  secondRowHadPositiveTime = false;
   galleryRenderMap.clear();
   galleryStateMap.clear();
   timelineEl.innerHTML = '';
@@ -1059,8 +1062,17 @@ function updateTimers() {
     timerEl.textContent = '⏳ ' + mm + ':' + ss;
 
     const isSecondEntry = Number.isFinite(entryIndex) && entryIndex === 1;
+    if (isSecondEntry && rawDiff > 0) {
+      secondRowHadPositiveTime = true;
+    }
     const isTimerZero = rawDiff <= 0 && mm === '00' && ss === '00';
-    if (!autoReloadTriggered && hasAppServerReadyForRefresh && isSecondEntry && isTimerZero) {
+    if (
+      !autoReloadTriggered &&
+      hasAppServerReadyForRefresh &&
+      isSecondEntry &&
+      secondRowHadPositiveTime &&
+      isTimerZero
+    ) {
       autoReloadTriggered = true;
       setTimeout(() => {
         window.location.reload();
