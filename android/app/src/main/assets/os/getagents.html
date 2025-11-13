@@ -314,10 +314,21 @@ const timelineEl = document.getElementById('timeline');
 const STATUS_ID = 'status';
 const REQUEST_METHOD = 'blockchain.headers.subscribe';
 const BLOCK_INTERVAL_MS = 2 * 60 * 1000;
-const hasNativeBridge =
+let hasNativeBridge =
   typeof window !== 'undefined' &&
   window.ReactNativeWebView &&
   typeof window.ReactNativeWebView.postMessage === 'function';
+const parentHasNativeBridge =
+  !hasNativeBridge &&
+  typeof window !== 'undefined' &&
+  window.parent &&
+  window.parent !== window &&
+  window.parent.ReactNativeWebView &&
+  typeof window.parent.ReactNativeWebView.postMessage === 'function';
+if (parentHasNativeBridge) {
+  window.ReactNativeWebView = window.parent.ReactNativeWebView;
+  hasNativeBridge = true;
+}
 const NATIVE_TIMEOUT_MS = 12000;
 let nativeRequestTimeoutId = null;
 let hasRenderedTimeline = false;
