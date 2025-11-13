@@ -2,6 +2,7 @@ import React, { useRef, useCallback } from 'react';
 import { View, StatusBar, Platform } from 'react-native';
 import { WebView } from 'react-native-webview';
 import BlueElectrum from './BlueElectrum';
+import { handleGetAgentsNamespaceRequest } from './GetAgentsNamespace';
 
 const ANDROID_GETAGENTS_SOURCE = { uri: 'file:///android_asset/os/getagents.html' };
 const IOS_GETAGENTS_SOURCE = { uri: 'getagents.html' };
@@ -35,6 +36,11 @@ export default function AgentsScreen() {
     }
   }, []);
 
+  const handleNamespaceCreationRequest = useCallback(
+    request => handleGetAgentsNamespaceRequest(request, sendMessageToWebView),
+    [sendMessageToWebView],
+  );
+
   const handleMessage = useCallback(
     async event => {
       const payload = event?.nativeEvent?.data;
@@ -53,7 +59,20 @@ export default function AgentsScreen() {
         parsed = payload;
       }
 
-      if (!parsed || parsed.type !== 'getagents_latest_block_request') {
+      if (!parsed) {
+        return;
+      }
+
+      if (parsed.type === 'getagents_create_namespace') {
+        try {
+          await handleNamespaceCreationRequest(parsed);
+        } catch (error) {
+          console.warn('AgentsScreen: failed to handle namespace creation request', error);
+        }
+        return;
+      }
+
+      if (parsed.type !== 'getagents_latest_block_request') {
         return;
       }
 
@@ -92,7 +111,7 @@ export default function AgentsScreen() {
         });
       }
     },
-    [sendMessageToWebView],
+    [sendMessageToWebView, handleNamespaceCreationRequest],
   );
 
   return (
