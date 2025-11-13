@@ -308,6 +308,7 @@ const ELECTRUM_ENDPOINTS = [
 const timelineEl = document.getElementById('timeline');
 const STATUS_ID = 'status';
 const REQUEST_METHOD = 'blockchain.headers.subscribe';
+const BLOCK_INTERVAL_MS = 2 * 60 * 1000;
 const hasNativeBridge =
   typeof window !== 'undefined' &&
   window.ReactNativeWebView &&
@@ -816,7 +817,7 @@ function appendMoreEntries(count) {
   for (let i = 0; i < count; i++) {
     const index = entriesLoaded + i;
     const height = baseBlockHeight + index;
-    const date = new Date(baseBlockDate.getTime() + index * 2 * 60 * 1000);
+    const date = new Date(baseBlockDate.getTime() + index * BLOCK_INTERVAL_MS);
     const entry = buildEntry(height, date, index);
     const gallery = entry.querySelector('.avatar-gallery');
     if (gallery) {
@@ -1001,18 +1002,27 @@ function initializeTimeline() {
   }
 }
 
-function parseBaseTime(text) {
-  const parts = text.trim().split(/\s+/);
-  if (parts.length < 2) return null;
-  const dateStr = parts[0];
-  const timeStr = parts[1];
-  const d = new Date(`${dateStr}T${timeStr}`);
-  if (isNaN(d.getTime())) return null;
-  return d;
+function computeSecondRowTargetMs() {
+  if (!(baseBlockDate instanceof Date)) {
+    return null;
+  }
+  return baseBlockDate.getTime() + BLOCK_INTERVAL_MS;
+}
+
+function computeTargetMsForEntry(entryIndex) {
+  if (!Number.isFinite(entryIndex) || entryIndex < 1) {
+    return null;
+  }
+  const secondRowTarget = computeSecondRowTargetMs();
+  if (!Number.isFinite(secondRowTarget)) {
+    return null;
+  }
+  const offset = (entryIndex - 1) * BLOCK_INTERVAL_MS;
+  return secondRowTarget + offset;
 }
 
 function updateTimers() {
-  const now = new Date();
+  const nowMs = Date.now();
   document.querySelectorAll('.entry').forEach(entry => {
     if (entry.dataset.timerDisabled === 'true') {
       return;
@@ -1022,32 +1032,20 @@ function updateTimers() {
       return;
     }
 
-    if (baseBlockDate === null) {
+    const entryIndex = Number(entry.dataset.index);
+    const targetMs = computeTargetMsForEntry(entryIndex);
+    if (!Number.isFinite(targetMs)) {
       timerEl.textContent = '⏳ 99:99';
       return;
     }
 
-    const h3 = entry.querySelector('.title h3');
-    if (!h3) {
-      timerEl.textContent = '⏳ 99:99';
-      return;
-    }
-
-    const base = parseBaseTime(h3.textContent);
-    if (!base) {
-      timerEl.textContent = '⏳ 99:99';
-      return;
-    }
-
-    const target = new Date(base.getTime() + 2 * 60 * 1000);
-    let diff = target - now;
+    let diff = targetMs - nowMs;
     const rawDiff = diff;
     if (diff < 0) diff = 0;
     const mm = String(Math.floor(diff / 60000)).padStart(2, '0');
     const ss = String(Math.floor((diff % 60000) / 1000)).padStart(2, '0');
     timerEl.textContent = '⏳ ' + mm + ':' + ss;
 
-    const entryIndex = Number(entry.dataset.index);
     const isSecondEntry = Number.isFinite(entryIndex) && entryIndex === 1;
     const isTimerZero = rawDiff <= 0 && mm === '00' && ss === '00';
     if (!autoReloadTriggered && isSecondEntry && isTimerZero) {
