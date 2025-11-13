@@ -50,6 +50,7 @@ import Success from './screen/send/success';
 import Broadcast from './screen/send/broadcast';
 import Namespaces from './screen/data/namespaces';
 import Explore from './screen/data/hashtagexplore';
+import GetAgents from './screen/data/geta';
 import KeyValues from './screen/data/keyvalues';
 import AddKeyValue from './screen/data/addkeyvalue';
 import EditProfile from './screen/data/editprofile';
@@ -265,6 +266,19 @@ const CreateTransactionStackNavigator = createStackNavigator({
 const HomeStackNavigator = createStackNavigator({
   Tabs: KevaTabNavigator,
   WebCheck: { screen: WebCheck, navigationOptions: { headerShown: false } },
+  GetAgents: {
+    screen: GetAgents,
+    path: 'GetAgents',
+    navigationOptions: {
+      headerStyle: {
+        backgroundColor: '#040608',
+        borderBottomWidth: 0,
+        elevation: 0,
+      },
+      headerTintColor: '#e7fff9',
+      headerTitleStyle: { color: '#e7fff9' },
+    },
+  },
   // Wallets
   WalletTransactions: {
     screen: WalletTransactions,
