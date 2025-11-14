@@ -1031,6 +1031,31 @@ function applyTimelineData(baseHeight, timestampSeconds) {
   resetTimeline(numericHeight, baseDate);
 }
 
+function formatTimerValue(diffMs) {
+  const mm = String(Math.floor(diffMs / 60000)).padStart(2, '0');
+  const ss = String(Math.floor((diffMs % 60000) / 1000)).padStart(2, '0');
+  return `${mm}:${ss}`;
+}
+
+function getInitialElapsedTimerText(timestampMs) {
+  if (!Number.isFinite(timestampMs)) {
+    return '00:00';
+  }
+  const nowMs = Date.now();
+  const diff = Math.max(0, nowMs - timestampMs);
+  return formatTimerValue(diff);
+}
+
+function getInitialCountdownTimerText(entryIndex) {
+  const targetMs = computeTargetMsForEntry(entryIndex);
+  if (!Number.isFinite(targetMs)) {
+    return Number.isFinite(entryIndex) && entryIndex === 1 ? '00:30' : '99:99';
+  }
+  const nowMs = Date.now();
+  const diff = Math.max(0, targetMs - nowMs);
+  return formatTimerValue(diff);
+}
+
 function buildEntry(height, date, index) {
   const entry = document.createElement('div');
   entry.className = 'entry clearfix';
@@ -1059,7 +1084,15 @@ function buildEntry(height, date, index) {
   const galleryInner = isFirstEntry ? '' : '<div class="avatar-loading">Generating avatars…</div>';
   const contentHtml = `<div class="${galleryClasses}" data-block="${height}">${galleryInner}</div>`;
   const timerEmoji = isFirstEntry ? '⏱' : '⏳';
-  const timerHtml = showTimer ? `<span class="timer" aria-label="countdown based on left time">${timerEmoji} 00:00</span>` : '';
+  let timerText = '00:00';
+  if (showTimer) {
+    timerText = timerMode === 'elapsed'
+      ? getInitialElapsedTimerText(timestampMs)
+      : getInitialCountdownTimerText(index);
+  }
+  const timerHtml = showTimer
+    ? `<span class="timer" aria-label="countdown based on left time">${timerEmoji} ${timerText}</span>`
+    : '';
   const showButton = enableLiveControls;
   const buttonLabel = isFirstEntry ? 'Reload ID' : 'Get Agents';
   const buttonDataAttr = isFirstEntry ? ' data-action="refresh"' : '';
