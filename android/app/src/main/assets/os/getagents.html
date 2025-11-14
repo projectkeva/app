@@ -196,6 +196,32 @@
     justify-content: center;
     box-shadow: 0 6px 18px rgba(0, 0, 0, .25);
     min-height: 64px;
+    position: relative;
+    overflow: hidden;
+    transition: box-shadow .25s ease, transform .25s ease;
+  }
+
+  .avatar-item.avatar-glow {
+    border-color: var(--accent-2);
+    box-shadow: 0 0 14px rgba(89, 251, 234, .85), 0 0 30px rgba(40, 244, 40, .35);
+    transform: translateY(-1px);
+    background: linear-gradient(180deg, rgba(23, 54, 56, .95), rgba(12, 42, 44, .95));
+  }
+
+  .avatar-item.avatar-glow::after {
+    content: '';
+    position: absolute;
+    inset: 2px;
+    border-radius: 9px;
+    background: radial-gradient(circle, rgba(89, 251, 234, .25) 0%, rgba(89, 251, 234, 0) 65%);
+    pointer-events: none;
+    animation: avatarGlowPulse 1.8s ease-in-out infinite;
+  }
+
+  @keyframes avatarGlowPulse {
+    0% { opacity: 0.65; }
+    50% { opacity: 1; }
+    100% { opacity: 0.65; }
   }
 
   .avatar-item.avatar-load-more {
@@ -394,6 +420,56 @@ const AVATAR_BATCH_COUNT = 8;
 const AGENT_SEED_SUFFIX = 'projectkeva';
 const AGENT_HEAD_POOL = 1000n;
 const AGENT_CLOTH_POOL = 500n;
+let walletUnconfirmedTxCount = 0;
+
+function sanitizeUnconfirmedCount(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric <= 0) {
+    return 0;
+  }
+  return Math.floor(numeric);
+}
+
+function clearAvatarGlow() {
+  Array.from(document.querySelectorAll('.avatar-item.avatar-glow')).forEach((item) => item.classList.remove('avatar-glow'));
+}
+
+function applyUnconfirmedAvatarHighlights() {
+  clearAvatarGlow();
+  if (walletUnconfirmedTxCount <= 0) {
+    return;
+  }
+  const secondEntry = document.querySelector('.entry[data-index="1"]');
+  if (!secondEntry) {
+    return;
+  }
+  const gallery = secondEntry.querySelector('.avatar-gallery');
+  if (!gallery) {
+    return;
+  }
+  const avatars = Array.from(gallery.querySelectorAll('.avatar-item')).filter((item) => {
+    if (item.classList.contains('avatar-load-more')) {
+      return false;
+    }
+    if (item.classList.contains('avatar-loading') || item.classList.contains('avatar-error')) {
+      return false;
+    }
+    return !!item.querySelector('.avatar-sprite');
+  });
+  const highlightCount = Math.min(walletUnconfirmedTxCount, avatars.length);
+  for (let i = 0; i < highlightCount; i++) {
+    avatars[i].classList.add('avatar-glow');
+  }
+}
+
+function setUnconfirmedTxCount(value) {
+  const sanitized = sanitizeUnconfirmedCount(value);
+  if (sanitized === walletUnconfirmedTxCount) {
+    return;
+  }
+  walletUnconfirmedTxCount = sanitized;
+  applyUnconfirmedAvatarHighlights();
+}
 
 function littleEndianHexToNumber(leHex) {
   if (!leHex || leHex.length % 2 !== 0) {
@@ -773,6 +849,8 @@ async function loadAvatarBatch(gallery, blockHeight, token, startIndex, count) {
       latestState.loading = false;
     }
   }
+
+  applyUnconfirmedAvatarHighlights();
 }
 
 function handleLoadMoreRequest(gallery) {
@@ -907,6 +985,7 @@ function appendMoreEntries(count) {
   populateAgentGalleries(newGalleries);
   updateTimers();
   hasRenderedTimeline = entriesLoaded > 0;
+  applyUnconfirmedAvatarHighlights();
 }
 
 function resetTimeline(baseHeight, baseDate) {
@@ -941,6 +1020,7 @@ function showStatus(message, isError = false) {
 }
 
 async function loadTimelineDirect(statusMessage, isError = false) {
+  setUnconfirmedTxCount(0);
   showStatus(statusMessage || 'Connecting to Kevacoin ElectrumX…', isError);
   try {
     const latest = await fetchLatestBlock();
@@ -989,6 +1069,7 @@ function triggerDirectFallback(message, isError = false) {
   }
   clearNativeTimeout();
   hasTriggeredDirectFallback = true;
+  setUnconfirmedTxCount(0);
   loadTimelineDirect(message || 'Connecting directly to Kevacoin ElectrumX…', isError);
 }
 
@@ -1037,6 +1118,7 @@ function handleNativeTimelineMessage(event) {
           hasAppServerReadyForRefresh = true;
         }
       }
+      setUnconfirmedTxCount(payload.unconfirmedTxCount);
       applyTimelineData(payload.height, payload.timestamp);
     } catch (error) {
       console.error('Invalid payload from native Electrum bridge', error);
