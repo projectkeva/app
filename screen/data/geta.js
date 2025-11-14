@@ -1,9 +1,30 @@
 import React, { useCallback, useRef } from 'react';
 import { Platform, StatusBar, View } from 'react-native';
 import { WebView } from 'react-native-webview';
+import { useSelector } from 'react-redux';
 import BlueElectrum from '../../BlueElectrum';
 import BlueApp from '../../BlueApp';
 import { handleGetAgentsNamespaceRequest } from '../../GetAgentsNamespace';
+
+function parseBlockHeightFromShortcode(shortCode) {
+  if (shortCode === undefined || shortCode === null) {
+    return null;
+  }
+  const normalized = String(shortCode).trim();
+  if (!/^[0-9]+$/.test(normalized) || normalized.length < 2) {
+    return null;
+  }
+  const heightDigits = parseInt(normalized[0], 10);
+  if (!Number.isFinite(heightDigits) || heightDigits <= 0 || normalized.length <= heightDigits) {
+    return null;
+  }
+  const blockSlice = normalized.slice(1, 1 + heightDigits);
+  const blockHeight = parseInt(blockSlice, 10);
+  if (!Number.isFinite(blockHeight)) {
+    return null;
+  }
+  return blockHeight;
+}
 
 let pendingWalletRefreshPromise = null;
 
@@ -96,6 +117,27 @@ const IOS_GETAGENTS_SOURCE = { uri: 'getagents.html' };
 
 export default function GetAgentsScreen() {
   const webviewRef = useRef(null);
+  const namespaceList = useSelector(state => state?.namespaceList);
+
+  const getWalletShortcodesForBlock = useCallback(
+    blockHeight => {
+      if (!Number.isFinite(blockHeight)) {
+        return [];
+      }
+      const namespaces = namespaceList && namespaceList.namespaces;
+      if (!namespaces || typeof namespaces !== 'object') {
+        return [];
+      }
+      return Object.values(namespaces)
+        .map(ns => (ns && typeof ns.shortCode !== 'undefined' ? ns.shortCode : null))
+        .filter(shortCode => {
+          const blockHeightForCode = parseBlockHeightFromShortcode(shortCode);
+          return Number.isFinite(blockHeightForCode) && blockHeightForCode === blockHeight;
+        })
+        .map(shortCode => String(shortCode));
+    },
+    [namespaceList],
+  );
 
   const sendMessageToWebView = useCallback(message => {
     const view = webviewRef.current;
@@ -168,6 +210,7 @@ export default function GetAgentsScreen() {
           BlueElectrum.getLatestHeaderSimple(),
           getUnconfirmedTransactionCount(),
         ]);
+        const walletShortcodes = getWalletShortcodesForBlock(latestHeader.height);
         let electrumConfig = null;
         try {
           electrumConfig = await BlueElectrum.getConfig();
@@ -192,6 +235,10 @@ export default function GetAgentsScreen() {
             timestamp: latestHeader.timestamp,
             electrum: electrumPayload,
             unconfirmedTxCount,
+            walletAgents: {
+              blockHeight: latestHeader.height,
+              shortcodes: walletShortcodes,
+            },
           },
         });
       } catch (error) {
@@ -202,7 +249,7 @@ export default function GetAgentsScreen() {
         });
       }
     },
-    [sendMessageToWebView, handleNamespaceCreationRequest],
+    [sendMessageToWebView, handleNamespaceCreationRequest, getWalletShortcodesForBlock],
   );
 
   return (
