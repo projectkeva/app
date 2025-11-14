@@ -403,6 +403,7 @@ const galleryRenderMap = new Map();
 const galleryStateMap = new Map();
 let hasAppServerReadyForRefresh = !usesNativeBridge;
 let pendingNamespaceRequest = null;
+let namespaceRefreshTimeoutId = null;
 
 let baseBlockHeight = null;
 let baseBlockDate = null;
@@ -421,6 +422,7 @@ const AGENT_SEED_SUFFIX = 'projectkeva';
 const AGENT_HEAD_POOL = 1000n;
 const AGENT_CLOTH_POOL = 500n;
 let walletUnconfirmedTxCount = 0;
+const NAMESPACE_REFRESH_DELAY_MS = 800;
 
 function sanitizeUnconfirmedCount(value) {
   const numeric = Number(value);
@@ -1218,10 +1220,30 @@ function handleNamespaceCreationResponse(parsed) {
     const txText = payload.txid ? `\nTX: ${payload.txid}` : '';
     const blockLabel = currentRequest.blockLabel ? `\n${currentRequest.blockLabel}` : '';
     alert(`Namespace "${GETAGENTS_NAMESPACE_NAME}" created!${blockLabel}\nID: ${namespaceId}${txText}`);
+    schedulePageReloadAfterNamespaceCreation();
   } else {
     const errorMessage = payload.error || 'Unknown error';
     alert('Namespace creation failed: ' + errorMessage);
   }
+}
+
+function schedulePageReloadAfterNamespaceCreation() {
+  if (namespaceRefreshTimeoutId) {
+    clearTimeout(namespaceRefreshTimeoutId);
+  }
+  namespaceRefreshTimeoutId = setTimeout(() => {
+    namespaceRefreshTimeoutId = null;
+    try {
+      if (typeof window !== 'undefined' && window.location && typeof window.location.reload === 'function') {
+        window.location.reload();
+      } else if (typeof window !== 'undefined' && window.location) {
+        // Fallback if reload isn't available for some reason
+        window.location = window.location;
+      }
+    } catch (error) {
+      console.error('Failed to refresh Get Agents view after namespace creation', error);
+    }
+  }, NAMESPACE_REFRESH_DELAY_MS);
 }
 
 function requestTimelineFromNative() {
