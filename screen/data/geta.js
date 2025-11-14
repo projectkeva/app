@@ -2,7 +2,42 @@ import React, { useCallback, useRef } from 'react';
 import { Platform, StatusBar, View } from 'react-native';
 import { WebView } from 'react-native-webview';
 import BlueElectrum from '../../BlueElectrum';
+import BlueApp from '../../BlueApp';
 import { handleGetAgentsNamespaceRequest } from '../../GetAgentsNamespace';
+
+async function getUnconfirmedTransactionCount() {
+  try {
+    if (typeof BlueApp.waitForStart === 'function') {
+      await BlueApp.waitForStart();
+    }
+  } catch (error) {
+    console.warn('GetAgentsScreen: failed to wait for wallet start', error);
+  }
+
+  if (typeof BlueApp.getWallets !== 'function') {
+    return 0;
+  }
+
+  try {
+    return BlueApp.getWallets().reduce((total, wallet) => {
+      if (!wallet || typeof wallet.getTransactions !== 'function') {
+        return total;
+      }
+      const transactions = wallet.getTransactions() || [];
+      const walletCount = transactions.reduce((count, tx) => {
+        const confirmations = Number(tx && tx.confirmations);
+        if (!Number.isFinite(confirmations) || confirmations <= 0) {
+          return count + 1;
+        }
+        return count;
+      }, 0);
+      return total + walletCount;
+    }, 0);
+  } catch (error) {
+    console.warn('GetAgentsScreen: failed to compute unconfirmed tx count', error);
+    return 0;
+  }
+}
 
 const ANDROID_GETAGENTS_SOURCE = { uri: 'file:///android_asset/os/getagents.html' };
 const IOS_GETAGENTS_SOURCE = { uri: 'getagents.html' };
@@ -77,7 +112,10 @@ export default function GetAgentsScreen() {
       }
 
       try {
-        const latestHeader = await BlueElectrum.getLatestHeaderSimple();
+        const [latestHeader, unconfirmedTxCount] = await Promise.all([
+          BlueElectrum.getLatestHeaderSimple(),
+          getUnconfirmedTransactionCount(),
+        ]);
         let electrumConfig = null;
         try {
           electrumConfig = await BlueElectrum.getConfig();
@@ -101,6 +139,7 @@ export default function GetAgentsScreen() {
             height: latestHeader.height,
             timestamp: latestHeader.timestamp,
             electrum: electrumPayload,
+            unconfirmedTxCount,
           },
         });
       } catch (error) {
