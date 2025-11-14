@@ -5,6 +5,57 @@ import BlueElectrum from '../../BlueElectrum';
 import BlueApp from '../../BlueApp';
 import { handleGetAgentsNamespaceRequest } from '../../GetAgentsNamespace';
 
+let pendingWalletRefreshPromise = null;
+
+async function refreshWalletDataForUnconfirmedCount() {
+  if (pendingWalletRefreshPromise) {
+    return pendingWalletRefreshPromise;
+  }
+
+  pendingWalletRefreshPromise = (async () => {
+    const wallets = typeof BlueApp.getWallets === 'function' ? BlueApp.getWallets() : [];
+    if (!Array.isArray(wallets) || wallets.length === 0) {
+      return;
+    }
+
+    await Promise.all(
+      wallets.map(async wallet => {
+        if (!wallet) {
+          return;
+        }
+
+        if (typeof wallet.fetchBalance === 'function') {
+          try {
+            await wallet.fetchBalance();
+          } catch (error) {
+            console.warn('GetAgentsScreen: failed to refresh wallet balance before counting unconfirmed tx', error);
+          }
+        }
+
+        if (typeof wallet.fetchTransactions === 'function') {
+          try {
+            await wallet.fetchTransactions();
+          } catch (error) {
+            console.warn('GetAgentsScreen: failed to refresh wallet transactions before counting unconfirmed tx', error);
+          }
+        }
+      }),
+    );
+
+    try {
+      await BlueApp.saveToDisk();
+    } catch (error) {
+      console.warn('GetAgentsScreen: failed to persist wallet data after refresh', error);
+    }
+  })();
+
+  try {
+    await pendingWalletRefreshPromise;
+  } finally {
+    pendingWalletRefreshPromise = null;
+  }
+}
+
 async function getUnconfirmedTransactionCount() {
   try {
     if (typeof BlueApp.waitForStart === 'function') {
@@ -19,6 +70,7 @@ async function getUnconfirmedTransactionCount() {
   }
 
   try {
+    await refreshWalletDataForUnconfirmedCount();
     return BlueApp.getWallets().reduce((total, wallet) => {
       if (!wallet || typeof wallet.getTransactions !== 'function') {
         return total;
