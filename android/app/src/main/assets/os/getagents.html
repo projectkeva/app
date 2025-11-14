@@ -1219,6 +1219,9 @@ function handleNamespaceCreationResponse(parsed) {
     const namespaceId = payload.namespaceId || 'unknown';
     const txText = payload.txid ? `\nTX: ${payload.txid}` : '';
     const blockLabel = currentRequest.blockLabel ? `\n${currentRequest.blockLabel}` : '';
+    // Optimistically bump the unconfirmed count so avatars light up immediately
+    // even before the wallet data refresh propagates back through the native bridge.
+    setUnconfirmedTxCount(walletUnconfirmedTxCount + 1);
     alert(`Namespace "${GETAGENTS_NAMESPACE_NAME}" created!${blockLabel}\nID: ${namespaceId}${txText}`);
     schedulePageReloadAfterNamespaceCreation();
   } else {
