@@ -1252,6 +1252,9 @@ function requestTimelineFromNative() {
     return;
   }
 
+  // Reset avatar glow state before we start the next native detection cycle so
+  // the default appearance never shows leftover highlights from a prior run.
+  setUnconfirmedTxCount(0);
   showStatus('Loading block data via app Electrum service…');
   try {
     const message = JSON.stringify({ type: 'getagents_latest_block_request' });
