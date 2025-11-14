@@ -21,6 +21,34 @@ function resolveNamespaceName(rawName) {
   return 'Agent';
 }
 
+async function refreshNamespaceWalletState(wallet) {
+  if (!wallet) {
+    return;
+  }
+
+  try {
+    if (typeof wallet.fetchBalance === 'function') {
+      await wallet.fetchBalance();
+    }
+  } catch (error) {
+    console.warn('GetAgentsNamespace: failed to refresh namespace wallet balance', error);
+  }
+
+  try {
+    if (typeof wallet.fetchTransactions === 'function') {
+      await wallet.fetchTransactions();
+    }
+  } catch (error) {
+    console.warn('GetAgentsNamespace: failed to refresh namespace wallet transactions', error);
+  }
+
+  try {
+    await BlueApp.saveToDisk();
+  } catch (error) {
+    console.warn('GetAgentsNamespace: failed to persist namespace wallet after refresh', error);
+  }
+}
+
 export async function handleGetAgentsNamespaceRequest(request, sendMessage) {
   const payload = (request && request.payload) || {};
   const namespaceName = resolveNamespaceName(payload.name);
@@ -58,16 +86,12 @@ export async function handleGetAgentsNamespaceRequest(request, sendMessage) {
       throw new Error(broadcastResult.message || 'Broadcast failed');
     }
 
+    await refreshNamespaceWalletState(namespaceWallet);
     respond({
       success: true,
       namespaceId,
       txid: typeof broadcastResult === 'string' ? broadcastResult : null,
     });
-    try {
-      await BlueApp.saveToDisk();
-    } catch (saveError) {
-      console.warn('GetAgentsNamespace: failed to persist after creation', saveError);
-    }
   } catch (error) {
     console.warn('GetAgentsNamespace: namespace creation failed', error);
     respond({
