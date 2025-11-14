@@ -412,6 +412,8 @@ let isLoadingMore = false;
 let autoReloadTriggered = false;
 let secondRowHadPositiveTime = false;
 let lastNamespaceClickTs = 0;
+let walletAgentState = null;
+let walletGalleryRenderToken = 0;
 
 const INITIAL_BATCH_COUNT = 11; // current block + 10 future blocks
 const LOAD_MORE_BATCH_COUNT = 10;
@@ -433,7 +435,13 @@ function sanitizeUnconfirmedCount(value) {
 }
 
 function clearAvatarGlow() {
-  Array.from(document.querySelectorAll('.avatar-item.avatar-glow')).forEach((item) => item.classList.remove('avatar-glow'));
+  Array.from(document.querySelectorAll('.avatar-item.avatar-glow')).forEach((item) => {
+    const parentGallery = item.closest('.avatar-gallery');
+    if (parentGallery && parentGallery.classList.contains('wallet-avatar-gallery')) {
+      return;
+    }
+    item.classList.remove('avatar-glow');
+  });
 }
 
 function applyUnconfirmedAvatarHighlights() {
@@ -471,6 +479,116 @@ function setUnconfirmedTxCount(value) {
   }
   walletUnconfirmedTxCount = sanitized;
   applyUnconfirmedAvatarHighlights();
+}
+
+function parseWalletShortcode(shortCode) {
+  if (shortCode === undefined || shortCode === null) {
+    return null;
+  }
+  const normalized = String(shortCode).trim();
+  if (!/^[0-9]+$/.test(normalized) || normalized.length < 2) {
+    return null;
+  }
+  const blockDigits = parseInt(normalized[0], 10);
+  if (!Number.isFinite(blockDigits) || blockDigits <= 0 || normalized.length <= blockDigits) {
+    return null;
+  }
+  const blockStr = normalized.slice(1, 1 + blockDigits);
+  const indexStr = normalized.slice(1 + blockDigits);
+  if (!indexStr) {
+    return null;
+  }
+  const block = parseInt(blockStr, 10);
+  const index = parseInt(indexStr, 10);
+  if (!Number.isFinite(block) || !Number.isFinite(index)) {
+    return null;
+  }
+  return { block, index };
+}
+
+function resetWalletAgentState() {
+  walletAgentState = null;
+  walletGalleryRenderToken += 1;
+  const gallery = document.querySelector('.avatar-gallery.wallet-avatar-gallery');
+  if (gallery) {
+    gallery.innerHTML = '';
+  }
+}
+
+function setWalletAgentState(agentPayload, fallbackBlockHeight) {
+  const blockCandidate =
+    agentPayload && Object.prototype.hasOwnProperty.call(agentPayload, 'blockHeight')
+      ? agentPayload.blockHeight
+      : fallbackBlockHeight;
+  const numericBlock = Number(blockCandidate);
+  const shortcodes = agentPayload && Array.isArray(agentPayload.shortcodes)
+    ? agentPayload.shortcodes
+    : [];
+  walletAgentState = {
+    blockHeight: Number.isFinite(numericBlock) ? numericBlock : null,
+    shortcodes: shortcodes
+      .map((value) => {
+        if (typeof value === 'string' || typeof value === 'number') {
+          const normalized = String(value).trim();
+          return normalized.length > 0 ? normalized : null;
+        }
+        return null;
+      })
+      .filter(Boolean),
+  };
+  applyWalletAgentAvatars();
+}
+
+async function applyWalletAgentAvatars() {
+  walletGalleryRenderToken += 1;
+  const token = walletGalleryRenderToken;
+  const gallery = document.querySelector('.avatar-gallery.wallet-avatar-gallery');
+  if (!gallery) {
+    return;
+  }
+  gallery.innerHTML = '';
+  if (!walletAgentState) {
+    return;
+  }
+  const targetBlock = walletAgentState.blockHeight;
+  if (!Number.isFinite(targetBlock) || targetBlock !== baseBlockHeight) {
+    return;
+  }
+  const parsedShortcodes = walletAgentState.shortcodes
+    .map((code) => ({ code, parsed: parseWalletShortcode(code) }))
+    .filter((item) => item.parsed && item.parsed.block === targetBlock);
+  if (parsedShortcodes.length === 0) {
+    return;
+  }
+  try {
+    const results = await Promise.all(
+      parsedShortcodes.map((item) =>
+        generateAgentProfile(item.parsed.block, item.parsed.index)
+          .then((profile) => ({ ok: true, profile }))
+          .catch((error) => ({ ok: false, error }))
+      )
+    );
+    if (walletGalleryRenderToken !== token) {
+      return;
+    }
+    let appended = 0;
+    results.forEach((result) => {
+      if (result.ok && result.profile) {
+        const avatar = createAvatarElement(result.profile);
+        avatar.classList.add('avatar-glow', 'wallet-agent-avatar');
+        gallery.appendChild(avatar);
+        appended += 1;
+      }
+    });
+    if (appended === 0) {
+      gallery.innerHTML = '';
+    }
+  } catch (error) {
+    console.error('Failed to render wallet agent avatars', error);
+    if (walletGalleryRenderToken === token) {
+      gallery.innerHTML = '';
+    }
+  }
 }
 
 function littleEndianHexToNumber(leHex) {
@@ -889,6 +1007,9 @@ function populateAgentGalleries(targets) {
     if (galleryRenderMap.has(gallery)) {
       return;
     }
+    if (gallery.classList.contains('wallet-avatar-gallery')) {
+      return;
+    }
     const blockHeight = Number(gallery.dataset.block);
     if (!Number.isFinite(blockHeight)) {
       return;
@@ -934,7 +1055,9 @@ function buildEntry(height, date, index) {
 
   const cardClasses = 'card card-gallery';
   const contentClasses = 'content content-gallery';
-  const contentHtml = `<div class="avatar-gallery" data-block="${height}"><div class="avatar-loading">Generating avatars…</div></div>`;
+  const galleryClasses = isFirstEntry ? 'avatar-gallery wallet-avatar-gallery' : 'avatar-gallery';
+  const galleryInner = isFirstEntry ? '' : '<div class="avatar-loading">Generating avatars…</div>';
+  const contentHtml = `<div class="${galleryClasses}" data-block="${height}">${galleryInner}</div>`;
   const timerEmoji = isFirstEntry ? '⏱' : '⏳';
   const timerHtml = showTimer ? `<span class="timer" aria-label="countdown based on left time">${timerEmoji} 00:00</span>` : '';
   const showButton = enableLiveControls;
@@ -988,6 +1111,7 @@ function appendMoreEntries(count) {
   updateTimers();
   hasRenderedTimeline = entriesLoaded > 0;
   applyUnconfirmedAvatarHighlights();
+  applyWalletAgentAvatars();
 }
 
 function resetTimeline(baseHeight, baseDate) {
@@ -1013,6 +1137,7 @@ function showStatus(message, isError = false) {
   secondRowHadPositiveTime = false;
   galleryRenderMap.clear();
   galleryStateMap.clear();
+  resetWalletAgentState();
   timelineEl.innerHTML = '';
   const statusEl = document.createElement('div');
   statusEl.id = STATUS_ID;
@@ -1122,6 +1247,7 @@ function handleNativeTimelineMessage(event) {
       const payloadUnconfirmed = sanitizeUnconfirmedCount(payload.unconfirmedTxCount);
       setUnconfirmedTxCount(payloadUnconfirmed);
       applyTimelineData(payload.height, payload.timestamp);
+      setWalletAgentState(payload.walletAgents || null, payload.height);
     } catch (error) {
       console.error('Invalid payload from native Electrum bridge', error);
       triggerDirectFallback('Invalid response from app. Connecting directly to Kevacoin ElectrumX…', true);
