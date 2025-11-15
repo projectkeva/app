@@ -39,6 +39,14 @@
     position: relative;
   }
 
+  .wallet-entry-container {
+    margin-bottom: 32px;
+  }
+
+  .wallet-entry-container .entry:last-child {
+    margin-bottom: 28px;
+  }
+
   /* center line */
   .timeline::before {
     content: "";
@@ -419,6 +427,7 @@ let secondRowHadPositiveTime = false;
 let lastNamespaceClickTs = 0;
 let walletAgentState = null;
 let walletGalleryRenderToken = 0;
+let walletEntryContainer = null;
 
 const INITIAL_BATCH_COUNT = 11; // current block + 10 future blocks
 const LOAD_MORE_BATCH_COUNT = 10;
@@ -511,60 +520,115 @@ function parseWalletShortcode(shortCode) {
   return { block, index };
 }
 
+function sanitizeWalletShortcode(value) {
+  if (typeof value !== 'string' && typeof value !== 'number') {
+    return null;
+  }
+  const normalized = String(value).trim();
+  return normalized.length > 0 ? normalized : null;
+}
+
+function ensureWalletEntryContainer() {
+  if (walletEntryContainer && walletEntryContainer.parentNode === timelineEl) {
+    return walletEntryContainer;
+  }
+  const container = document.createElement('div');
+  container.id = 'wallet-entry-container';
+  container.className = 'wallet-entry-container';
+  walletEntryContainer = container;
+  if (timelineEl.firstChild) {
+    timelineEl.insertBefore(container, timelineEl.firstChild);
+  } else {
+    timelineEl.appendChild(container);
+  }
+  return container;
+}
+
+function clearWalletEntryContainer() {
+  if (walletEntryContainer && walletEntryContainer.parentNode) {
+    walletEntryContainer.parentNode.removeChild(walletEntryContainer);
+  }
+  walletEntryContainer = null;
+}
+
 function resetWalletAgentState() {
   walletAgentState = null;
   walletGalleryRenderToken += 1;
-  const gallery = document.querySelector('.avatar-gallery.wallet-avatar-gallery');
-  if (gallery) {
-    gallery.innerHTML = '';
-  }
+  clearWalletEntryContainer();
 }
 
 function setWalletAgentState(agentPayload, fallbackBlockHeight) {
-  const blockCandidate =
-    agentPayload && Object.prototype.hasOwnProperty.call(agentPayload, 'blockHeight')
-      ? agentPayload.blockHeight
+  const referenceCandidate =
+    agentPayload && Object.prototype.hasOwnProperty.call(agentPayload, 'referenceBlockHeight')
+      ? agentPayload.referenceBlockHeight
       : fallbackBlockHeight;
-  const numericBlock = Number(blockCandidate);
-  const shortcodes = agentPayload && Array.isArray(agentPayload.shortcodes)
-    ? agentPayload.shortcodes
-    : [];
+  const numericReference = Number(referenceCandidate);
+
+  const normalizedGroups = [];
+  if (agentPayload && Array.isArray(agentPayload.groups)) {
+    agentPayload.groups.forEach((group) => {
+      const blockCandidate = group && (Object.prototype.hasOwnProperty.call(group, 'blockHeight')
+        ? group.blockHeight
+        : Object.prototype.hasOwnProperty.call(group || {}, 'block')
+          ? group.block
+          : null);
+      const numericBlock = Number(blockCandidate);
+      if (!Number.isFinite(numericBlock)) {
+        return;
+      }
+      const rawShortcodes = Array.isArray(group.shortcodes) ? group.shortcodes : [];
+      const normalizedShortcodes = Array.from(new Set(
+        rawShortcodes.map(sanitizeWalletShortcode).filter(Boolean)
+      ));
+      if (normalizedShortcodes.length === 0) {
+        return;
+      }
+      normalizedGroups.push({ blockHeight: numericBlock, shortcodes: normalizedShortcodes });
+    });
+  } else if (agentPayload && Array.isArray(agentPayload.shortcodes)) {
+    const fallbackBlock = Number(
+      Object.prototype.hasOwnProperty.call(agentPayload, 'blockHeight')
+        ? agentPayload.blockHeight
+        : fallbackBlockHeight,
+    );
+    if (Number.isFinite(fallbackBlock)) {
+      const normalizedShortcodes = Array.from(new Set(
+        agentPayload.shortcodes.map(sanitizeWalletShortcode).filter(Boolean)
+      ));
+      if (normalizedShortcodes.length > 0) {
+        normalizedGroups.push({ blockHeight: fallbackBlock, shortcodes: normalizedShortcodes });
+      }
+    }
+  }
+
+  normalizedGroups.sort((a, b) => a.blockHeight - b.blockHeight);
+
   walletAgentState = {
-    blockHeight: Number.isFinite(numericBlock) ? numericBlock : null,
-    shortcodes: shortcodes
-      .map((value) => {
-        if (typeof value === 'string' || typeof value === 'number') {
-          const normalized = String(value).trim();
-          return normalized.length > 0 ? normalized : null;
-        }
-        return null;
-      })
-      .filter(Boolean),
+    referenceBlockHeight: Number.isFinite(numericReference) ? numericReference : null,
+    groups: normalizedGroups,
   };
-  applyWalletAgentAvatars();
+  applyWalletAgentEntries();
 }
 
-async function applyWalletAgentAvatars() {
+async function renderWalletAvatarsForGallery(gallery, blockHeight, shortcodes) {
   walletGalleryRenderToken += 1;
   const token = walletGalleryRenderToken;
-  const gallery = document.querySelector('.avatar-gallery.wallet-avatar-gallery');
-  if (!gallery) {
-    return;
-  }
+  gallery.dataset.walletToken = String(token);
   gallery.innerHTML = '';
-  if (!walletAgentState) {
-    return;
-  }
-  const targetBlock = walletAgentState.blockHeight;
-  if (!Number.isFinite(targetBlock) || targetBlock !== baseBlockHeight) {
-    return;
-  }
-  const parsedShortcodes = walletAgentState.shortcodes
+
+  const parsedShortcodes = shortcodes
     .map((code) => ({ code, parsed: parseWalletShortcode(code) }))
-    .filter((item) => item.parsed && item.parsed.block === targetBlock);
+    .filter((item) => item.parsed && item.parsed.block === blockHeight);
+
   if (parsedShortcodes.length === 0) {
     return;
   }
+
+  const loader = document.createElement('div');
+  loader.className = 'avatar-loading';
+  loader.textContent = 'Generating avatars…';
+  gallery.appendChild(loader);
+
   try {
     const results = await Promise.all(
       parsedShortcodes.map((item) =>
@@ -573,9 +637,10 @@ async function applyWalletAgentAvatars() {
           .catch((error) => ({ ok: false, error }))
       )
     );
-    if (walletGalleryRenderToken !== token) {
+    if (gallery.dataset.walletToken !== String(token)) {
       return;
     }
+    loader.remove();
     let appended = 0;
     results.forEach((result) => {
       if (result.ok && result.profile) {
@@ -590,10 +655,57 @@ async function applyWalletAgentAvatars() {
     }
   } catch (error) {
     console.error('Failed to render wallet agent avatars', error);
-    if (walletGalleryRenderToken === token) {
+    if (gallery.dataset.walletToken === String(token)) {
       gallery.innerHTML = '';
     }
   }
+}
+
+function applyWalletAgentEntries() {
+  if (!walletAgentState || !Array.isArray(walletAgentState.groups) || walletAgentState.groups.length === 0) {
+    clearWalletEntryContainer();
+    return;
+  }
+  if (baseBlockHeight === null || !(baseBlockDate instanceof Date) || entriesLoaded <= 0) {
+    return;
+  }
+
+  const minBlock = baseBlockHeight;
+  const maxBlock = baseBlockHeight + entriesLoaded - 1;
+  const visibleGroups = walletAgentState.groups.filter((group) => {
+    return Number.isFinite(group.blockHeight)
+      && group.blockHeight >= minBlock
+      && group.blockHeight <= maxBlock
+      && Array.isArray(group.shortcodes)
+      && group.shortcodes.length > 0;
+  });
+
+  if (visibleGroups.length === 0) {
+    clearWalletEntryContainer();
+    return;
+  }
+
+  const container = ensureWalletEntryContainer();
+  container.innerHTML = '';
+  const fragment = document.createDocumentFragment();
+  const renderJobs = [];
+
+  visibleGroups.forEach((group) => {
+    const offset = group.blockHeight - baseBlockHeight;
+    const date = new Date(baseBlockDate.getTime() + offset * BLOCK_INTERVAL_MS);
+    const entry = buildWalletEntry(group.blockHeight, date);
+    const gallery = entry.querySelector('.avatar-gallery');
+    if (gallery) {
+      gallery.dataset.block = String(group.blockHeight);
+      renderJobs.push({ gallery, blockHeight: group.blockHeight, shortcodes: group.shortcodes });
+    }
+    fragment.appendChild(entry);
+  });
+
+  container.appendChild(fragment);
+  renderJobs.forEach((job) => {
+    renderWalletAvatarsForGallery(job.gallery, job.blockHeight, job.shortcodes);
+  });
 }
 
 function littleEndianHexToNumber(leHex) {
@@ -1109,8 +1221,8 @@ function buildEntry(height, date, index) {
 
   const cardClasses = 'card card-gallery';
   const contentClasses = 'content content-gallery';
-  const galleryClasses = isFirstEntry ? 'avatar-gallery wallet-avatar-gallery' : 'avatar-gallery';
-  const galleryInner = isFirstEntry ? '' : '<div class="avatar-loading">Generating avatars…</div>';
+  const galleryClasses = 'avatar-gallery';
+  const galleryInner = '<div class="avatar-loading">Generating avatars…</div>';
   const contentHtml = `<div class="${galleryClasses}" data-block="${height}">${galleryInner}</div>`;
   const timerEmoji = isFirstEntry ? '⏱' : '⏳';
   let timerText = '00:00';
@@ -1137,6 +1249,27 @@ function buildEntry(height, date, index) {
     <div class="body">
       <div class="${cardClasses}">
         <div class="${contentClasses}">${contentHtml}</div>
+      </div>
+    </div>
+  `;
+
+  return entry;
+}
+
+function buildWalletEntry(height, date) {
+  const entry = document.createElement('div');
+  entry.className = 'entry clearfix wallet-entry';
+
+  entry.innerHTML = `
+    <div class="title">
+      <h3>${formatDateTime(date)}</h3>
+      <p>BLOCK ${formatBlock(height)}</p>
+    </div>
+    <div class="body">
+      <div class="card card-gallery">
+        <div class="content content-gallery">
+          <div class="avatar-gallery wallet-avatar-gallery" data-block="${height}"></div>
+        </div>
       </div>
     </div>
   `;
@@ -1173,7 +1306,7 @@ function appendMoreEntries(count) {
   updateTimers();
   hasRenderedTimeline = entriesLoaded > 0;
   applyUnconfirmedAvatarHighlights();
-  applyWalletAgentAvatars();
+  applyWalletAgentEntries();
 }
 
 function resetTimeline(baseHeight, baseDate) {
@@ -1183,6 +1316,7 @@ function resetTimeline(baseHeight, baseDate) {
   autoReloadTriggered = false;
   secondRowHadPositiveTime = false;
   timelineEl.innerHTML = '';
+  walletEntryContainer = null;
   galleryRenderMap.clear();
   galleryStateMap.clear();
   appendMoreEntries(INITIAL_BATCH_COUNT);

@@ -119,25 +119,33 @@ export default function GetAgentsScreen() {
   const webviewRef = useRef(null);
   const namespaceList = useSelector(state => state?.namespaceList);
 
-  const getWalletShortcodesForBlock = useCallback(
-    blockHeight => {
-      if (!Number.isFinite(blockHeight)) {
-        return [];
+  const getWalletShortcodeGroups = useCallback(() => {
+    const namespaces = namespaceList && namespaceList.namespaces;
+    if (!namespaces || typeof namespaces !== 'object') {
+      return [];
+    }
+
+    const grouped = new Map();
+    Object.values(namespaces).forEach(ns => {
+      const shortCode = ns && typeof ns.shortCode !== 'undefined' ? ns.shortCode : null;
+      const blockHeightForCode = parseBlockHeightFromShortcode(shortCode);
+      if (!Number.isFinite(blockHeightForCode)) {
+        return;
       }
-      const namespaces = namespaceList && namespaceList.namespaces;
-      if (!namespaces || typeof namespaces !== 'object') {
-        return [];
+      const normalized = String(shortCode);
+      if (!grouped.has(blockHeightForCode)) {
+        grouped.set(blockHeightForCode, new Set());
       }
-      return Object.values(namespaces)
-        .map(ns => (ns && typeof ns.shortCode !== 'undefined' ? ns.shortCode : null))
-        .filter(shortCode => {
-          const blockHeightForCode = parseBlockHeightFromShortcode(shortCode);
-          return Number.isFinite(blockHeightForCode) && blockHeightForCode === blockHeight;
-        })
-        .map(shortCode => String(shortCode));
-    },
-    [namespaceList],
-  );
+      grouped.get(blockHeightForCode).add(normalized);
+    });
+
+    return Array.from(grouped.entries())
+      .sort((a, b) => a[0] - b[0])
+      .map(([blockHeight, shortcodes]) => ({
+        blockHeight,
+        shortcodes: Array.from(shortcodes),
+      }));
+  }, [namespaceList]);
 
   const sendMessageToWebView = useCallback(message => {
     const view = webviewRef.current;
@@ -210,7 +218,7 @@ export default function GetAgentsScreen() {
           BlueElectrum.getLatestHeaderSimple(),
           getUnconfirmedTransactionCount(),
         ]);
-        const walletShortcodes = getWalletShortcodesForBlock(latestHeader.height);
+        const walletShortcodeGroups = getWalletShortcodeGroups();
         let electrumConfig = null;
         try {
           electrumConfig = await BlueElectrum.getConfig();
@@ -236,8 +244,8 @@ export default function GetAgentsScreen() {
             electrum: electrumPayload,
             unconfirmedTxCount,
             walletAgents: {
-              blockHeight: latestHeader.height,
-              shortcodes: walletShortcodes,
+              referenceBlockHeight: latestHeader.height,
+              groups: walletShortcodeGroups,
             },
           },
         });
@@ -249,7 +257,7 @@ export default function GetAgentsScreen() {
         });
       }
     },
-    [sendMessageToWebView, handleNamespaceCreationRequest, getWalletShortcodesForBlock],
+    [sendMessageToWebView, handleNamespaceCreationRequest, getWalletShortcodeGroups],
   );
 
   return (
