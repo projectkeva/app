@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Get Agents</title>
 <style>
+  @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap');
   :root {
     --bg: #0b0c0d;
     --fg: #ffffff;
@@ -24,13 +25,87 @@
     font-size: 15px;
     margin: 0;
     padding: 0;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Noto Sans CJK SC", "Microsoft YaHei", Helvetica, Arial, sans-serif;
+    font-family: 'Share Tech Mono', 'Share Tech Mono', monospace, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Noto Sans CJK SC", "Microsoft YaHei", Helvetica, Arial, sans-serif;
   }
 
   a { color: var(--accent-2); text-decoration: none; }
   a:hover { color: yellow; }
 
   .wrap { min-height: 100vh; width: 100%; display: flex; align-items: flex-start; justify-content: center; }
+
+  .boot-overlay {
+    position: fixed;
+    inset: 0;
+    background: radial-gradient(circle at 20% 20%, rgba(12, 80, 97, 0.32), rgba(0, 0, 0, 0.94));
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: opacity 0.65s ease, transform 0.65s ease;
+  }
+
+  .boot-overlay.boot-overlay--hidden {
+    opacity: 0;
+    pointer-events: none;
+    transform: scale(1.02);
+  }
+
+  .boot-overlay-inner {
+    width: min(520px, 90vw);
+    max-height: 70vh;
+    border: 1px solid rgba(0, 234, 255, 0.35);
+    border-radius: 18px;
+    padding: 32px 30px 26px;
+    background: rgba(1, 9, 11, 0.92);
+    box-shadow: 0 0 35px rgba(0, 237, 255, 0.18);
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+  }
+
+  .boot-logo {
+    font-size: 18px;
+    letter-spacing: 0.5em;
+    text-transform: uppercase;
+    color: var(--accent);
+    text-shadow: 0 0 8px rgba(89, 251, 234, 0.6);
+  }
+
+  .boot-log {
+    flex: 1;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 14px;
+    color: var(--fg);
+  }
+
+  .boot-line {
+    opacity: 0;
+    transform: translateY(6px);
+    transition: opacity 0.35s ease, transform 0.35s ease;
+    color: rgba(255, 255, 255, 0.82);
+    letter-spacing: 0.08em;
+  }
+
+  .boot-line.visible {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  .boot-line::before {
+    content: '> ';
+    color: var(--accent-2);
+  }
+
+  .boot-line.accent {
+    color: var(--accent);
+  }
+
+  .boot-line.error {
+    color: var(--error);
+  }
 
   .timeline {
     width: 100%;
@@ -357,6 +432,12 @@
 </style>
 </head>
 <body>
+<div class="boot-overlay" id="bootOverlay">
+  <div class="boot-overlay-inner">
+    <div class="boot-logo">KEVA//AGENT OPS</div>
+    <div class="boot-log" id="bootLog"></div>
+  </div>
+</div>
 <div class="wrap">
   <div class="timeline" id="timeline">
     <div class="status" id="status">Loading the latest block data…</div>
@@ -364,18 +445,85 @@
 </div>
 
 <script>
-const ELECTRUM_ENDPOINTS = [
-  'wss://electrumx.kevacoin.org:50004',
-  'wss://electrum.kevacoin.org:50004',
-  'wss://ec.kevacoin.org:50004',
-];
 const timelineEl = document.getElementById('timeline');
 const STATUS_ID = 'status';
-const REQUEST_METHOD = 'blockchain.headers.subscribe';
 const BLOCK_INTERVAL_MS = 2 * 60 * 1000;
 const GETAGENTS_NAMESPACE_NAME = 'Agent';
 const NAMESPACE_CLICK_THROTTLE_MS = 1000;
 const NAMESPACE_BUTTON_BUSY_LABEL = 'Creating…';
+const bootOverlay = document.getElementById('bootOverlay');
+const bootLogEl = document.getElementById('bootLog');
+let bootLineCounter = 0;
+let bootPreludeTimer = null;
+
+function appendBootLine(message, tone = 'normal') {
+  if (!bootLogEl) {
+    return;
+  }
+  const line = document.createElement('div');
+  line.className = 'boot-line' + (tone === 'error' ? ' error' : tone === 'accent' ? ' accent' : '');
+  line.textContent = `[${String(++bootLineCounter).padStart(2, '0')}] ${message}`;
+  bootLogEl.appendChild(line);
+  bootLogEl.scrollTop = bootLogEl.scrollHeight;
+  if (typeof requestAnimationFrame === 'function') {
+    requestAnimationFrame(() => line.classList.add('visible'));
+  } else {
+    line.classList.add('visible');
+  }
+}
+
+function resetBootOverlay() {
+  if (!bootOverlay || !bootLogEl) {
+    return;
+  }
+  bootOverlay.classList.remove('boot-overlay--hidden');
+  bootLogEl.innerHTML = '';
+  bootLogEl.scrollTop = 0;
+  bootLineCounter = 0;
+  if (bootPreludeTimer) {
+    clearTimeout(bootPreludeTimer);
+    bootPreludeTimer = null;
+  }
+}
+
+function playBootPrelude() {
+  if (!bootOverlay) {
+    return;
+  }
+  const lines = [
+    'SYS> Initializing GETA terminal…',
+    'CORE> Loading identity holograms…',
+    'NET> Calibrating Kevacoin clock drift…',
+    'OS> Spooling Electrum uplink…',
+  ];
+  let index = 0;
+  const tick = () => {
+    appendBootLine(lines[index], index === 0 ? 'accent' : 'normal');
+    index += 1;
+    if (index < lines.length) {
+      bootPreludeTimer = setTimeout(tick, 260);
+    }
+  };
+  tick();
+}
+
+function concludeBootOverlay(delay = 500) {
+  if (!bootOverlay) {
+    return;
+  }
+  if (bootPreludeTimer) {
+    clearTimeout(bootPreludeTimer);
+    bootPreludeTimer = null;
+  }
+  setTimeout(() => {
+    bootOverlay.classList.add('boot-overlay--hidden');
+  }, delay);
+}
+
+function failBootOverlay(message) {
+  appendBootLine(`ERR> ${message}`, 'error');
+  concludeBootOverlay(1400);
+}
 
 function getParentReactNativeBridge() {
   try {
@@ -421,10 +569,9 @@ if (!hasNativeBridge && parentNativeBridge) {
 }
 const hasParentBridgeProxy = !hasNativeBridge && canProxyThroughParent();
 const usesNativeBridge = hasNativeBridge || hasParentBridgeProxy;
-const NATIVE_TIMEOUT_MS = 12000;
+const NATIVE_TIMEOUT_MS = 8000;
 let nativeRequestTimeoutId = null;
 let hasRenderedTimeline = false;
-let hasTriggeredDirectFallback = false;
 let galleryRenderToken = 0;
 const galleryRenderMap = new Map();
 const galleryStateMap = new Map();
@@ -918,116 +1065,6 @@ async function applyWalletAgentAvatars() {
   }
 }
 
-function littleEndianHexToNumber(leHex) {
-  if (!leHex || leHex.length % 2 !== 0) {
-    return null;
-  }
-  const bytes = leHex.match(/.{2}/g);
-  if (!bytes) return null;
-  const beHex = bytes.reverse().join('');
-  return Number.parseInt(beHex, 16);
-}
-
-function parseHeaderTimestamp(header) {
-  if (!header) return null;
-  if (typeof header.timestamp === 'number') {
-    return header.timestamp;
-  }
-  if (typeof header.hex === 'string' && header.hex.length >= 144) {
-    const timeLe = header.hex.slice(136, 144);
-    const ts = littleEndianHexToNumber(timeLe);
-    if (Number.isFinite(ts)) {
-      return ts;
-    }
-  }
-  return null;
-}
-
-function extractHeaderPayload(message) {
-  if (!message) return null;
-  if (message.result && typeof message.result === 'object') {
-    return message.result;
-  }
-  if (Array.isArray(message.params) && message.params.length > 0) {
-    return message.params[0];
-  }
-  return null;
-}
-
-function requestLatestHeader(endpoint) {
-  return new Promise((resolve, reject) => {
-    let settled = false;
-    const ws = new WebSocket(endpoint);
-    const timeout = setTimeout(() => {
-      if (!settled) {
-        settled = true;
-        try { ws.close(); } catch (_) {}
-        reject(new Error('ElectrumX request timed out'));
-      }
-    }, 10000);
-
-    const finalize = (err, data) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timeout);
-      try { ws.close(); } catch (_) {}
-      if (err) {
-        reject(err);
-      } else {
-        resolve(data);
-      }
-    };
-
-    ws.onopen = () => {
-      try {
-        ws.send(JSON.stringify({ id: Date.now(), method: REQUEST_METHOD, params: [] }));
-      } catch (error) {
-        finalize(error);
-      }
-    };
-
-    ws.onerror = () => {
-      finalize(new Error('ElectrumX connection error'));
-    };
-
-    ws.onclose = () => {
-      finalize(new Error('ElectrumX connection closed before response'));
-    };
-
-    ws.onmessage = (event) => {
-      try {
-        const payload = JSON.parse(event.data);
-        const header = extractHeaderPayload(payload);
-        if (!header) {
-          return;
-        }
-        const height = Number(header.height);
-        const timestamp = parseHeaderTimestamp(header);
-        if (!Number.isFinite(height) || !Number.isFinite(timestamp)) {
-          finalize(new Error('Invalid ElectrumX header payload'));
-          return;
-        }
-        finalize(null, { height, timestamp });
-      } catch (error) {
-        finalize(error);
-      }
-    };
-  });
-}
-
-async function fetchLatestBlock() {
-  let lastError = null;
-  for (const endpoint of ELECTRUM_ENDPOINTS) {
-    try {
-      return await requestLatestHeader(endpoint);
-    } catch (error) {
-      lastError = error;
-      console.warn('ElectrumX endpoint failed', endpoint, error);
-    }
-  }
-  throw lastError || new Error('No ElectrumX endpoint available');
-}
-
 function formatDateTime(date) {
   const y = date.getFullYear();
   const m = String(date.getMonth() + 1).padStart(2, '0');
@@ -1459,18 +1496,6 @@ function showStatus(message, isError = false) {
   timelineEl.appendChild(statusEl);
 }
 
-async function loadTimelineDirect(statusMessage, isError = false) {
-  applyPendingUnconfirmedStateOrReset();
-  showStatus(statusMessage || 'Connecting to Kevacoin ElectrumX…', isError);
-  try {
-    const latest = await fetchLatestBlock();
-    applyTimelineData(latest.height, latest.timestamp);
-  } catch (error) {
-    console.error('Failed to load block data', error);
-    showStatus('Unable to load block data. Please try again later.', true);
-  }
-}
-
 function handleInfiniteScroll() {
   const doc = document.documentElement;
   const body = document.body;
@@ -1511,15 +1536,6 @@ function clearNativeTimeout() {
   }
 }
 
-function triggerDirectFallback(message, isError = false) {
-  if (hasRenderedTimeline || hasTriggeredDirectFallback) {
-    return;
-  }
-  clearNativeTimeout();
-  hasTriggeredDirectFallback = true;
-  loadTimelineDirect(message || 'Connecting directly to Kevacoin ElectrumX…', isError);
-}
-
 function handleNativeTimelineMessage(event) {
   if (!usesNativeBridge) {
     return;
@@ -1558,19 +1574,28 @@ function handleNativeTimelineMessage(event) {
     clearNativeTimeout();
     try {
       const payload = parsed.payload || {};
-      if (payload.electrum) {
-        const serverHint = payload.electrum.host || payload.electrum.server || payload.electrum.serverName;
-        if (serverHint) {
-          console.log('Get Agents Electrum host:', serverHint);
-        }
+      const serverHint =
+        payload.electrum && (payload.electrum.host || payload.electrum.server || payload.electrum.serverName);
+      if (serverHint) {
+        console.log('Get Agents Electrum host:', serverHint);
+        appendBootLine(`ELECTRUM> Bridge locked on ${serverHint}`, 'accent');
+      } else {
+        appendBootLine('ELECTRUM> Native relay online', 'accent');
       }
       const payloadUnconfirmed = sanitizeUnconfirmedCount(payload.unconfirmedTxCount);
       setUnconfirmedTxCount(payloadUnconfirmed);
+      if (Number.isFinite(payload.height) && Number.isFinite(payload.timestamp)) {
+        const tipDate = new Date(payload.timestamp * 1000);
+        appendBootLine(`CHAIN> Tip ${payload.height} @ ${formatDateTime(tipDate)}`);
+      }
+      appendBootLine('SYS> Rendering Kevacoin agent grid…');
       applyTimelineData(payload.height, payload.timestamp);
       setWalletAgentState(payload.walletAgents || null, payload.height);
+      concludeBootOverlay();
     } catch (error) {
       console.error('Invalid payload from native Electrum bridge', error);
-      triggerDirectFallback('Invalid response from app. Connecting directly to Kevacoin ElectrumX…', true);
+      failBootOverlay('Invalid response from app Electrum bridge.');
+      showStatus('Invalid response from Kevacoin app. Please reopen Get Agents.', true);
     }
   } else if (parsed.type === 'getagents_latest_block_error') {
     clearNativeTimeout();
@@ -1579,7 +1604,8 @@ function handleNativeTimelineMessage(event) {
       return;
     }
     console.error('Native Electrum bridge reported error', parsed.error);
-    triggerDirectFallback('App Electrum service unavailable. Connecting directly to Kevacoin ElectrumX…');
+    failBootOverlay('App Electrum service unavailable.');
+    showStatus('App Electrum service unavailable. Please try again.', true);
   } else if (parsed.type === 'getagents_create_namespace_result') {
     handleNamespaceCreationResponse(parsed);
   }
@@ -1697,14 +1723,14 @@ function schedulePageReloadAfterNamespaceCreation() {
 
 function requestTimelineFromNative() {
   if (!usesNativeBridge) {
-    loadTimelineDirect();
+    failBootOverlay('Native bridge unavailable. Launch inside the Kevacoin app.');
+    showStatus('Get Agents is only available inside the Kevacoin app.', true);
     return;
   }
 
-  // Reset avatar glow state before we start the next native detection cycle so
-  // the default appearance never shows leftover highlights from a prior run.
   setUnconfirmedTxCount(0);
-  showStatus('Loading block data via app Electrum service…');
+  showStatus('Loading block data via Kevacoin Electrum service…');
+  appendBootLine('NET> Awaiting Electrum handshake from Kevacoin app…');
   try {
     const message = JSON.stringify({ type: 'getagents_latest_block_request' });
     let delivered = false;
@@ -1722,22 +1748,28 @@ function requestTimelineFromNative() {
     nativeRequestTimeoutId = setTimeout(() => {
       nativeRequestTimeoutId = null;
       if (!hasRenderedTimeline) {
-        triggerDirectFallback('App response timed out. Connecting directly to Kevacoin ElectrumX…');
+        console.warn('Get Agents Electrum bridge timed out');
+        failBootOverlay('Electrum bridge timeout. Please reopen Get Agents.');
+        showStatus('Electrum bridge timeout. Please reopen Get Agents.', true);
       }
     }, NATIVE_TIMEOUT_MS);
   } catch (error) {
     console.error('Failed to request Electrum data from native bridge', error);
-    triggerDirectFallback('Unable to load block data via app. Connecting directly to Kevacoin ElectrumX…', true);
+    failBootOverlay('Unable to reach Kevacoin app bridge.');
+    showStatus('Unable to load block data via native Electrum service.', true);
   }
 }
 
-  function initializeTimeline() {
-    if (usesNativeBridge) {
-      requestTimelineFromNative();
-    } else {
-      loadTimelineDirect();
-    }
+function initializeTimeline() {
+  resetBootOverlay();
+  playBootPrelude();
+  if (usesNativeBridge) {
+    requestTimelineFromNative();
+  } else {
+    failBootOverlay('Native bridge offline. Launch via Kevacoin app.');
+    showStatus('Get Agents requires the Kevacoin app.', true);
   }
+}
 
 window.addEventListener('scroll', handleInfiniteScroll, { passive: true });
 
