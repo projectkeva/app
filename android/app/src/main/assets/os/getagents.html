@@ -264,6 +264,12 @@
     opacity: .45;
   }
 
+  .avatar-item.avatar-placeholder-cell {
+    opacity: 0.35;
+    border-style: dashed;
+    pointer-events: none;
+  }
+
   .avatar-load-more-icon {
     font-size: 30px;
     line-height: 1;
@@ -422,7 +428,6 @@ let hasTriggeredDirectFallback = false;
 let galleryRenderToken = 0;
 const galleryRenderMap = new Map();
 const galleryStateMap = new Map();
-let hasAppServerReadyForRefresh = !usesNativeBridge;
 let pendingNamespaceRequest = null;
 let namespaceRefreshTimeoutId = null;
 
@@ -430,8 +435,6 @@ let baseBlockHeight = null;
 let baseBlockDate = null;
 let entriesLoaded = 0;
 let isLoadingMore = false;
-let autoReloadTriggered = false;
-let secondRowHadPositiveTime = false;
 let lastNamespaceClickTs = 0;
 let walletAgentState = null;
 let walletGalleryRenderToken = 0;
@@ -547,14 +550,37 @@ function resetWalletHistoryEntries(removeFromDom = true) {
 }
 
 function formatWalletBlockDate(timestampSeconds) {
-  if (!Number.isFinite(timestampSeconds)) {
+  if (!Number.isFinite(timestampSeconds) || timestampSeconds <= 0) {
     return 'Unknown time';
   }
-  const date = new Date(timestampSeconds * 1000);
+  const isMilliseconds = timestampSeconds > 1e12;
+  const date = new Date(isMilliseconds ? timestampSeconds : timestampSeconds * 1000);
   if (Number.isNaN(date.getTime())) {
     return 'Unknown time';
   }
   return formatDateTime(date);
+}
+
+function ensureWalletGalleryPlaceholders(gallery, renderedCount) {
+  if (!gallery) {
+    return;
+  }
+  Array.from(gallery.querySelectorAll('.avatar-placeholder-cell')).forEach((placeholder) => {
+    placeholder.remove();
+  });
+  if (!Number.isFinite(renderedCount) || renderedCount <= 0) {
+    return;
+  }
+  const remainder = renderedCount % 4;
+  if (remainder === 0) {
+    return;
+  }
+  const placeholdersNeeded = 4 - remainder;
+  for (let i = 0; i < placeholdersNeeded; i++) {
+    const placeholder = document.createElement('div');
+    placeholder.className = 'avatar-item avatar-placeholder-cell';
+    gallery.appendChild(placeholder);
+  }
 }
 
 async function renderWalletGalleryForShortcodes(gallery, blockHeight, shortcodes, token) {
@@ -596,7 +622,9 @@ async function renderWalletGalleryForShortcodes(gallery, blockHeight, shortcodes
     });
     if (appended === 0) {
       gallery.innerHTML = '<div class="avatar-error">Unable to render shortcode avatars.</div>';
+      return;
     }
+    ensureWalletGalleryPlaceholders(gallery, appended);
   } catch (error) {
     console.error('Failed to render wallet shortcode avatars', error);
     if (walletHistoryRenderToken === token) {
@@ -610,7 +638,9 @@ function createWalletHistoryEntryElement(entry, token) {
     return null;
   }
   const blockHeight = Number(entry.blockHeight);
-  const timestampSeconds = Number(entry.timestamp);
+  const hasTimestamp = entry.timestamp !== null && entry.timestamp !== undefined;
+  const timestampValue = hasTimestamp ? Number(entry.timestamp) : null;
+  const timestampSeconds = Number.isFinite(timestampValue) ? timestampValue : null;
   const shortcodes = Array.isArray(entry.shortcodes)
     ? entry.shortcodes.slice()
     : [];
@@ -620,7 +650,6 @@ function createWalletHistoryEntryElement(entry, token) {
   const entryEl = document.createElement('div');
   entryEl.className = 'entry wallet-history-entry clearfix';
   entryEl.dataset.walletEntry = 'true';
-  entryEl.dataset.timerDisabled = 'true';
   entryEl.innerHTML = `
     <div class="title">
       <h3>${formatWalletBlockDate(timestampSeconds)}</h3>
@@ -848,7 +877,9 @@ async function applyWalletAgentAvatars() {
     });
     if (appended === 0) {
       gallery.innerHTML = '';
+      return;
     }
+    ensureWalletGalleryPlaceholders(gallery, appended);
   } catch (error) {
     console.error('Failed to render wallet agent avatars', error);
     if (walletGalleryRenderToken === token) {
@@ -1297,55 +1328,6 @@ function applyTimelineData(baseHeight, timestampSeconds) {
   resetTimeline(numericHeight, baseDate);
 }
 
-function formatTimerValue(diffMs) {
-  const mm = String(Math.floor(diffMs / 60000)).padStart(2, '0');
-  const ss = String(Math.floor((diffMs % 60000) / 1000)).padStart(2, '0');
-  return `${mm}:${ss}`;
-}
-
-function getBaseBlockTimestampMs() {
-  if (!(baseBlockDate instanceof Date)) {
-    return null;
-  }
-  const ts = baseBlockDate.getTime();
-  return Number.isFinite(ts) ? ts : null;
-}
-
-function getTimestampMsForEntryIndex(entryIndex) {
-  if (!Number.isFinite(entryIndex)) {
-    return null;
-  }
-  const baseTimestamp = getBaseBlockTimestampMs();
-  if (!Number.isFinite(baseTimestamp)) {
-    return null;
-  }
-  const offset = entryIndex * BLOCK_INTERVAL_MS;
-  return baseTimestamp + offset;
-}
-
-function getInitialElapsedTimerText(timestampMs, entryIndex) {
-  let effectiveTimestamp = Number.isFinite(timestampMs) ? timestampMs : null;
-  if (!Number.isFinite(effectiveTimestamp)) {
-    effectiveTimestamp = getTimestampMsForEntryIndex(entryIndex);
-  }
-  if (!Number.isFinite(effectiveTimestamp)) {
-    return '00:00';
-  }
-  const nowMs = Date.now();
-  const diff = Math.max(0, nowMs - effectiveTimestamp);
-  return formatTimerValue(diff);
-}
-
-function getInitialCountdownTimerText(entryIndex) {
-  const targetMs = computeTargetMsForEntry(entryIndex);
-  if (!Number.isFinite(targetMs)) {
-    return Number.isFinite(entryIndex) && entryIndex === 1 ? '00:30' : '99:99';
-  }
-  const nowMs = Date.now();
-  const diff = Math.max(0, targetMs - nowMs);
-  return formatTimerValue(diff);
-}
-
 function buildEntry(height, date, index) {
   const entry = document.createElement('div');
   entry.className = 'entry clearfix';
@@ -1353,46 +1335,25 @@ function buildEntry(height, date, index) {
     entry.dataset.index = String(index);
   }
 
-  const timestampMs = date instanceof Date ? date.getTime() : NaN;
-  if (Number.isFinite(timestampMs)) {
-    entry.dataset.timestampMs = String(timestampMs);
-  }
-
   const isFirstEntry = Number.isFinite(index) && index === 0;
   const enableLiveControls = Number.isFinite(index) ? index <= 1 : true;
-  const timerMode = isFirstEntry ? 'elapsed' : 'countdown';
-  entry.dataset.timerMode = timerMode;
-
-  const showTimer = enableLiveControls && (!Number.isFinite(index) ? true : index >= 0);
-  if (!showTimer) {
-    entry.dataset.timerDisabled = 'true';
-  }
 
   const cardClasses = 'card card-gallery';
   const contentClasses = 'content content-gallery';
   const galleryClasses = isFirstEntry ? 'avatar-gallery wallet-avatar-gallery' : 'avatar-gallery';
   const galleryInner = isFirstEntry ? '' : '<div class="avatar-loading">Generating avatars…</div>';
   const contentHtml = `<div class="${galleryClasses}" data-block="${height}">${galleryInner}</div>`;
-  const timerEmoji = isFirstEntry ? '⏱' : '⏳';
-  let timerText = '00:00';
-  if (showTimer) {
-    timerText = timerMode === 'elapsed'
-      ? getInitialElapsedTimerText(timestampMs, index)
-      : getInitialCountdownTimerText(index);
-  }
-  const timerHtml = showTimer
-    ? `<span class="timer" aria-label="countdown based on left time">${timerEmoji} ${timerText}</span>`
-    : '';
   const showButton = enableLiveControls;
   const buttonLabel = isFirstEntry ? 'Reload ID' : 'Get Agents';
   const buttonDataAttr = isFirstEntry ? ' data-action="refresh"' : '';
   const buttonHtml = showButton ? `<a href="#" class="btn btn-get"${buttonDataAttr}>${buttonLabel}</a>` : '';
   const blockLabelClass = isFirstEntry ? 'block-label-highlight' : '';
+  const liveControlsHtml = showButton ? `<div class="live">${buttonHtml}</div>` : '';
 
   entry.innerHTML = `
     <div class="title">
       <h3>${formatDateTime(date)}</h3>
-      ${enableLiveControls ? `<div class="live">${timerHtml}${buttonHtml}</div>` : ''}
+      ${liveControlsHtml}
       <p class="${blockLabelClass}">BLOCK ${formatBlock(height)}</p>
     </div>
     <div class="body">
@@ -1431,7 +1392,6 @@ function appendMoreEntries(count) {
   timelineEl.appendChild(fragment);
   entriesLoaded += count;
   populateAgentGalleries(newGalleries);
-  updateTimers();
   hasRenderedTimeline = entriesLoaded > 0;
   applyUnconfirmedAvatarHighlights();
   applyWalletAgentAvatars();
@@ -1442,8 +1402,6 @@ function resetTimeline(baseHeight, baseDate) {
   baseBlockHeight = baseHeight;
   baseBlockDate = baseDate;
   entriesLoaded = 0;
-  autoReloadTriggered = false;
-  secondRowHadPositiveTime = false;
   timelineEl.innerHTML = '';
   galleryRenderMap.clear();
   galleryStateMap.clear();
@@ -1459,8 +1417,6 @@ function showStatus(message, isError = false) {
   baseBlockDate = null;
   entriesLoaded = 0;
   isLoadingMore = false;
-  autoReloadTriggered = false;
-  secondRowHadPositiveTime = false;
   galleryRenderMap.clear();
   galleryStateMap.clear();
   resetWalletAgentState();
@@ -1576,7 +1532,6 @@ function handleNativeTimelineMessage(event) {
         const serverHint = payload.electrum.host || payload.electrum.server || payload.electrum.serverName;
         if (serverHint) {
           console.log('Get Agents Electrum host:', serverHint);
-          hasAppServerReadyForRefresh = true;
         }
       }
       const payloadUnconfirmed = sanitizeUnconfirmedCount(payload.unconfirmedTxCount);
@@ -1753,94 +1708,6 @@ function requestTimelineFromNative() {
       loadTimelineDirect();
     }
   }
-
-function computeSecondRowTargetMs() {
-  if (!(baseBlockDate instanceof Date)) {
-    return null;
-  }
-  return baseBlockDate.getTime() + BLOCK_INTERVAL_MS;
-}
-
-function computeTargetMsForEntry(entryIndex) {
-  if (!Number.isFinite(entryIndex) || entryIndex < 1) {
-    return null;
-  }
-  const secondRowTarget = computeSecondRowTargetMs();
-  if (!Number.isFinite(secondRowTarget)) {
-    return null;
-  }
-  const offset = (entryIndex - 1) * BLOCK_INTERVAL_MS;
-  return secondRowTarget + offset;
-}
-
-function updateTimers() {
-  const nowMs = Date.now();
-  const baseTimestampMs = getBaseBlockTimestampMs();
-  document.querySelectorAll('.entry').forEach(entry => {
-    if (entry.dataset.timerDisabled === 'true') {
-      return;
-    }
-    const timerEl = entry.querySelector('.timer');
-    if (!timerEl) {
-      return;
-    }
-
-    const timerMode = entry.dataset.timerMode || 'countdown';
-    const entryIndex = Number(entry.dataset.index);
-    if (timerMode === 'elapsed') {
-      let startMs = Number(entry.dataset.timestampMs);
-      if (!Number.isFinite(startMs)) {
-        startMs = getTimestampMsForEntryIndex(entryIndex);
-      }
-      if (!Number.isFinite(startMs)) {
-        timerEl.textContent = '⏱ 00:00';
-        return;
-      }
-      let diff = nowMs - startMs;
-      if (diff < 0) diff = 0;
-      timerEl.textContent = '⏱ ' + formatTimerValue(diff);
-      return;
-    }
-
-    const targetMs = computeTargetMsForEntry(entryIndex);
-    if (!Number.isFinite(targetMs)) {
-      if (Number.isFinite(entryIndex) && entryIndex === 1 && Number.isFinite(baseTimestampMs)) {
-        const elapsed = Math.max(0, nowMs - baseTimestampMs);
-        timerEl.textContent = '⏳ ' + formatTimerValue(elapsed);
-      } else if (Number.isFinite(entryIndex) && entryIndex === 1) {
-        timerEl.textContent = '⏳ 00:30';
-      } else {
-        timerEl.textContent = '⏳ 99:99';
-      }
-      return;
-    }
-
-    let diff = targetMs - nowMs;
-    const rawDiff = diff;
-    if (diff < 0) diff = 0;
-    timerEl.textContent = '⏳ ' + formatTimerValue(diff);
-
-    const isSecondEntry = Number.isFinite(entryIndex) && entryIndex === 1;
-    if (isSecondEntry && rawDiff > 0) {
-      secondRowHadPositiveTime = true;
-    }
-    const isTimerZero = rawDiff <= 0 || diff <= 0;
-    if (
-      !autoReloadTriggered &&
-      hasAppServerReadyForRefresh &&
-      isSecondEntry &&
-      secondRowHadPositiveTime &&
-      isTimerZero
-    ) {
-      autoReloadTriggered = true;
-      setTimeout(() => {
-        window.location.reload();
-      }, 100);
-    }
-  });
-}
-
-setInterval(updateTimers, 200);
 
 window.addEventListener('scroll', handleInfiniteScroll, { passive: true });
 
