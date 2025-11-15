@@ -1,4 +1,4 @@
-import React, { useCallback, useRef } from 'react';
+import React, { useCallback, useMemo, useRef } from 'react';
 import { Platform, StatusBar, View } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { useSelector } from 'react-redux';
@@ -24,6 +24,64 @@ function parseBlockHeightFromShortcode(shortCode) {
     return null;
   }
   return blockHeight;
+}
+
+function parseTimestampFromHeaderHex(headerHex) {
+  if (typeof headerHex !== 'string') {
+    return null;
+  }
+  const trimmedHex = headerHex.trim();
+  if (trimmedHex.length < 144) {
+    return null;
+  }
+  const tsLittleEndian = trimmedHex.slice(136, 144);
+  if (tsLittleEndian.length !== 8) {
+    return null;
+  }
+  const bytePairs = tsLittleEndian.match(/.{2}/g);
+  if (!bytePairs || bytePairs.length !== 4) {
+    return null;
+  }
+  const bigEndianHex = bytePairs.reverse().join('');
+  const timestamp = parseInt(bigEndianHex, 16);
+  if (!Number.isFinite(timestamp)) {
+    return null;
+  }
+  return timestamp;
+}
+
+function extractTimestampFromHeaderPayload(header) {
+  if (!header) {
+    return null;
+  }
+  if (typeof header === 'object') {
+    if (Number.isFinite(header.timestamp)) {
+      return Number(header.timestamp);
+    }
+    if (Number.isFinite(header.time)) {
+      return Number(header.time);
+    }
+    if (typeof header.hex === 'string') {
+      return parseTimestampFromHeaderHex(header.hex);
+    }
+  }
+  if (typeof header === 'string') {
+    return parseTimestampFromHeaderHex(header);
+  }
+  return null;
+}
+
+async function fetchBlockTimestampSeconds(blockHeight) {
+  try {
+    const header = await BlueElectrum.blockchainBlock_getHeader(blockHeight);
+    const timestamp = extractTimestampFromHeaderPayload(header);
+    if (Number.isFinite(timestamp)) {
+      return timestamp;
+    }
+  } catch (error) {
+    console.warn('GetAgentsScreen: failed to fetch header for wallet block timestamp', blockHeight, error);
+  }
+  return null;
 }
 
 let pendingWalletRefreshPromise = null;
@@ -119,25 +177,74 @@ export default function GetAgentsScreen() {
   const webviewRef = useRef(null);
   const namespaceList = useSelector(state => state?.namespaceList);
 
+  const walletShortcodesByBlock = useMemo(() => {
+    const namespaces = namespaceList && namespaceList.namespaces;
+    if (!namespaces || typeof namespaces !== 'object') {
+      return new Map();
+    }
+    const map = new Map();
+    Object.values(namespaces).forEach(ns => {
+      if (!ns || typeof ns.shortCode === 'undefined' || ns.shortCode === null) {
+        return;
+      }
+      const blockHeight = parseBlockHeightFromShortcode(ns.shortCode);
+      if (!Number.isFinite(blockHeight)) {
+        return;
+      }
+      const normalized = String(ns.shortCode).trim();
+      if (!map.has(blockHeight)) {
+        map.set(blockHeight, []);
+      }
+      map.get(blockHeight).push(normalized);
+    });
+    return map;
+  }, [namespaceList]);
+
   const getWalletShortcodesForBlock = useCallback(
     blockHeight => {
       if (!Number.isFinite(blockHeight)) {
         return [];
       }
-      const namespaces = namespaceList && namespaceList.namespaces;
-      if (!namespaces || typeof namespaces !== 'object') {
+      const shortcodes = walletShortcodesByBlock.get(blockHeight);
+      if (!shortcodes || shortcodes.length === 0) {
         return [];
       }
-      return Object.values(namespaces)
-        .map(ns => (ns && typeof ns.shortCode !== 'undefined' ? ns.shortCode : null))
-        .filter(shortCode => {
-          const blockHeightForCode = parseBlockHeightFromShortcode(shortCode);
-          return Number.isFinite(blockHeightForCode) && blockHeightForCode === blockHeight;
-        })
-        .map(shortCode => String(shortCode));
+      return shortcodes.slice();
     },
-    [namespaceList],
+    [walletShortcodesByBlock],
   );
+
+  const getWalletBlockEntries = useCallback(async () => {
+    if (!(walletShortcodesByBlock instanceof Map) || walletShortcodesByBlock.size === 0) {
+      return [];
+    }
+    const blockHeights = Array.from(walletShortcodesByBlock.keys()).filter(height => Number.isFinite(height));
+    if (blockHeights.length === 0) {
+      return [];
+    }
+    blockHeights.sort((a, b) => a - b);
+    const entries = [];
+    try {
+      await BlueElectrum.waitTillConnected();
+    } catch (error) {
+      console.warn('GetAgentsScreen: failed to wait for Electrum connection before resolving wallet block entries', error);
+    }
+    for (const height of blockHeights) {
+      const shortcodes = walletShortcodesByBlock.get(height) || [];
+      let timestamp = null;
+      try {
+        timestamp = await fetchBlockTimestampSeconds(height);
+      } catch (error) {
+        console.warn('GetAgentsScreen: failed to resolve wallet block timestamp', error);
+      }
+      entries.push({
+        blockHeight: height,
+        timestamp,
+        shortcodes: shortcodes.slice(),
+      });
+    }
+    return entries;
+  }, [walletShortcodesByBlock]);
 
   const sendMessageToWebView = useCallback(message => {
     const view = webviewRef.current;
@@ -211,6 +318,12 @@ export default function GetAgentsScreen() {
           getUnconfirmedTransactionCount(),
         ]);
         const walletShortcodes = getWalletShortcodesForBlock(latestHeader.height);
+        let walletBlockEntries = [];
+        try {
+          walletBlockEntries = await getWalletBlockEntries();
+        } catch (error) {
+          console.warn('GetAgentsScreen: failed to build wallet block list', error);
+        }
         let electrumConfig = null;
         try {
           electrumConfig = await BlueElectrum.getConfig();
@@ -238,6 +351,7 @@ export default function GetAgentsScreen() {
             walletAgents: {
               blockHeight: latestHeader.height,
               shortcodes: walletShortcodes,
+              blocks: walletBlockEntries,
             },
           },
         });
@@ -249,7 +363,12 @@ export default function GetAgentsScreen() {
         });
       }
     },
-    [sendMessageToWebView, handleNamespaceCreationRequest, getWalletShortcodesForBlock],
+    [
+      sendMessageToWebView,
+      handleNamespaceCreationRequest,
+      getWalletShortcodesForBlock,
+      getWalletBlockEntries,
+    ],
   );
 
   return (

@@ -39,6 +39,80 @@
     position: relative;
   }
 
+  .wallet-panel {
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    margin: 0 auto 28px;
+    background: rgba(8, 20, 22, 0.95);
+    box-shadow: 0 10px 30px rgba(0,0,0,.25);
+  }
+
+  .wallet-panel[hidden] {
+    display: none;
+  }
+
+  .wallet-panel-toggle {
+    width: 100%;
+    background: none;
+    border: none;
+    color: var(--fg);
+    font-size: 16px;
+    font-weight: 600;
+    padding: 16px 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    cursor: pointer;
+  }
+
+  .wallet-panel-toggle:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  .wallet-panel-count {
+    font-size: 13px;
+    color: var(--muted);
+    margin-left: 12px;
+  }
+
+  .wallet-panel-chevron {
+    margin-left: auto;
+    transition: transform 0.2s ease;
+  }
+
+  .wallet-panel-toggle.is-open .wallet-panel-chevron {
+    transform: rotate(180deg);
+  }
+
+  .wallet-panel-content {
+    border-top: 1px solid var(--line);
+    padding: 18px 18px 6px;
+  }
+
+  .wallet-panel-content[hidden] {
+    display: none;
+  }
+
+  .wallet-panel-empty {
+    text-align: center;
+    color: var(--muted);
+    padding: 12px 0;
+    font-size: 13px;
+  }
+
+  .wallet-panel .entry {
+    margin-bottom: 18px;
+  }
+
+  .wallet-panel .entry:last-child {
+    margin-bottom: 6px;
+  }
+
+  .wallet-panel .entry .title::before {
+    background: var(--accent-2);
+  }
+
   /* center line */
   .timeline::before {
     content: "";
@@ -337,6 +411,16 @@
 <body>
 <div class="wrap">
   <div class="timeline" id="timeline">
+    <div class="wallet-panel" id="wallet-panel" hidden>
+      <button type="button" class="wallet-panel-toggle" id="wallet-panel-toggle" aria-expanded="false">
+        <span>Wallet Spaces</span>
+        <span class="wallet-panel-count" id="wallet-panel-count">0</span>
+        <span class="wallet-panel-chevron" aria-hidden="true">▾</span>
+      </button>
+      <div class="wallet-panel-content" id="wallet-panel-content" hidden>
+        <div class="wallet-panel-empty">No wallet namespaces detected.</div>
+      </div>
+    </div>
     <div class="status" id="status">Loading the latest block data…</div>
   </div>
 </div>
@@ -348,12 +432,17 @@ const ELECTRUM_ENDPOINTS = [
   'wss://ec.kevacoin.org:50004',
 ];
 const timelineEl = document.getElementById('timeline');
+const walletPanelEl = document.getElementById('wallet-panel');
+const walletPanelToggle = document.getElementById('wallet-panel-toggle');
+const walletPanelContentEl = document.getElementById('wallet-panel-content');
+const walletPanelCountEl = document.getElementById('wallet-panel-count');
 const STATUS_ID = 'status';
 const REQUEST_METHOD = 'blockchain.headers.subscribe';
 const BLOCK_INTERVAL_MS = 2 * 60 * 1000;
 const GETAGENTS_NAMESPACE_NAME = 'Agent';
 const NAMESPACE_CLICK_THROTTLE_MS = 1000;
 const NAMESPACE_BUTTON_BUSY_LABEL = 'Creating…';
+const WALLET_PANEL_EMPTY_HTML = '<div class="wallet-panel-empty">No wallet namespaces detected.</div>';
 
 function getParentReactNativeBridge() {
   try {
@@ -410,6 +499,16 @@ let hasAppServerReadyForRefresh = !usesNativeBridge;
 let pendingNamespaceRequest = null;
 let namespaceRefreshTimeoutId = null;
 
+if (walletPanelToggle && walletPanelContentEl) {
+  walletPanelToggle.addEventListener('click', () => {
+    const expanded = walletPanelToggle.getAttribute('aria-expanded') === 'true';
+    const nextExpanded = !expanded;
+    walletPanelToggle.setAttribute('aria-expanded', String(nextExpanded));
+    walletPanelToggle.classList.toggle('is-open', nextExpanded);
+    walletPanelContentEl.hidden = !nextExpanded;
+  });
+}
+
 let baseBlockHeight = null;
 let baseBlockDate = null;
 let entriesLoaded = 0;
@@ -419,6 +518,7 @@ let secondRowHadPositiveTime = false;
 let lastNamespaceClickTs = 0;
 let walletAgentState = null;
 let walletGalleryRenderToken = 0;
+let walletBlockListRenderToken = 0;
 
 const INITIAL_BATCH_COUNT = 11; // current block + 10 future blocks
 const LOAD_MORE_BATCH_COUNT = 10;
@@ -511,9 +611,151 @@ function parseWalletShortcode(shortCode) {
   return { block, index };
 }
 
+function hideWalletPanel() {
+  walletBlockListRenderToken += 1;
+  if (walletPanelEl) {
+    walletPanelEl.hidden = true;
+  }
+  if (walletPanelToggle) {
+    walletPanelToggle.setAttribute('aria-expanded', 'false');
+    walletPanelToggle.classList.remove('is-open');
+  }
+  if (walletPanelContentEl) {
+    walletPanelContentEl.hidden = true;
+    walletPanelContentEl.innerHTML = WALLET_PANEL_EMPTY_HTML;
+  }
+  if (walletPanelCountEl) {
+    walletPanelCountEl.textContent = '0';
+  }
+}
+
+function formatWalletBlockDate(timestampSeconds) {
+  if (!Number.isFinite(timestampSeconds)) {
+    return 'Unknown time';
+  }
+  const date = new Date(timestampSeconds * 1000);
+  if (Number.isNaN(date.getTime())) {
+    return 'Unknown time';
+  }
+  return formatDateTime(date);
+}
+
+async function renderWalletGalleryForShortcodes(gallery, blockHeight, shortcodes, token) {
+  if (!gallery) {
+    return;
+  }
+  if (!Array.isArray(shortcodes) || shortcodes.length === 0) {
+    gallery.innerHTML = '<div class="avatar-error">No shortcode avatars found.</div>';
+    return;
+  }
+  const parsedShortcodes = shortcodes
+    .map((code) => ({ code, parsed: parseWalletShortcode(code) }))
+    .filter((item) => item.parsed && item.parsed.block === blockHeight);
+  if (parsedShortcodes.length === 0) {
+    gallery.innerHTML = '<div class="avatar-error">No matching block avatars.</div>';
+    return;
+  }
+  gallery.innerHTML = '<div class="avatar-loading">Loading wallet avatars…</div>';
+  try {
+    const results = await Promise.all(
+      parsedShortcodes.map((item) =>
+        generateAgentProfile(item.parsed.block, item.parsed.index)
+          .then((profile) => ({ ok: true, profile }))
+          .catch((error) => ({ ok: false, error }))
+      )
+    );
+    if (walletBlockListRenderToken !== token) {
+      return;
+    }
+    gallery.innerHTML = '';
+    let appended = 0;
+    results.forEach((result) => {
+      if (result.ok && result.profile) {
+        const avatar = createAvatarElement(result.profile);
+        avatar.classList.add('wallet-agent-avatar');
+        gallery.appendChild(avatar);
+        appended += 1;
+      }
+    });
+    if (appended === 0) {
+      gallery.innerHTML = '<div class="avatar-error">Unable to render shortcode avatars.</div>';
+    }
+  } catch (error) {
+    console.error('Failed to render wallet shortcode avatars', error);
+    if (walletBlockListRenderToken === token) {
+      gallery.innerHTML = '<div class="avatar-error">Unable to render shortcode avatars.</div>';
+    }
+  }
+}
+
+function renderWalletBlockEntries() {
+  if (!walletPanelEl || !walletPanelContentEl || !walletPanelToggle || !walletPanelCountEl) {
+    return;
+  }
+  const blockEntries = walletAgentState && Array.isArray(walletAgentState.blocks)
+    ? walletAgentState.blocks
+    : [];
+  walletPanelCountEl.textContent = String(blockEntries.length);
+  if (blockEntries.length === 0) {
+    hideWalletPanel();
+    return;
+  }
+  walletPanelEl.hidden = false;
+  walletPanelToggle.setAttribute('aria-expanded', 'true');
+  walletPanelToggle.classList.add('is-open');
+  walletPanelContentEl.hidden = false;
+  walletBlockListRenderToken += 1;
+  const token = walletBlockListRenderToken;
+  const fragment = document.createDocumentFragment();
+  blockEntries.forEach((entry) => {
+    if (!entry || !Number.isFinite(entry.blockHeight)) {
+      return;
+    }
+    const blockHeight = Number(entry.blockHeight);
+    const timestampSeconds = Number(entry.timestamp);
+    const shortcodes = Array.isArray(entry.shortcodes)
+      ? entry.shortcodes
+          .map((value) => {
+            if (typeof value === 'string' || typeof value === 'number') {
+              const normalized = String(value).trim();
+              return normalized.length > 0 ? normalized : null;
+            }
+            return null;
+          })
+          .filter(Boolean)
+      : [];
+    if (shortcodes.length === 0) {
+      return;
+    }
+    const entryEl = document.createElement('div');
+    entryEl.className = 'entry wallet-entry clearfix';
+    entryEl.innerHTML = `
+      <div class="title">
+        <h3>${formatWalletBlockDate(timestampSeconds)}</h3>
+        <p>BLOCK ${formatBlock(blockHeight)}</p>
+      </div>
+      <div class="body">
+        <div class="card card-gallery">
+          <div class="content content-gallery">
+            <div class="avatar-gallery wallet-entry-gallery" data-block="${blockHeight}"></div>
+          </div>
+        </div>
+      </div>
+    `;
+    fragment.appendChild(entryEl);
+    const gallery = entryEl.querySelector('.wallet-entry-gallery');
+    if (gallery) {
+      renderWalletGalleryForShortcodes(gallery, blockHeight, shortcodes, token);
+    }
+  });
+  walletPanelContentEl.innerHTML = '';
+  walletPanelContentEl.appendChild(fragment);
+}
+
 function resetWalletAgentState() {
   walletAgentState = null;
   walletGalleryRenderToken += 1;
+  hideWalletPanel();
   const gallery = document.querySelector('.avatar-gallery.wallet-avatar-gallery');
   if (gallery) {
     gallery.innerHTML = '';
@@ -529,6 +771,41 @@ function setWalletAgentState(agentPayload, fallbackBlockHeight) {
   const shortcodes = agentPayload && Array.isArray(agentPayload.shortcodes)
     ? agentPayload.shortcodes
     : [];
+  const blockEntries = agentPayload && Array.isArray(agentPayload.blocks)
+    ? agentPayload.blocks
+    : [];
+  const normalizedBlocks = blockEntries
+    .map((entry) => {
+      if (!entry || !Object.prototype.hasOwnProperty.call(entry, 'blockHeight')) {
+        return null;
+      }
+      const blockHeight = Number(entry.blockHeight);
+      if (!Number.isFinite(blockHeight)) {
+        return null;
+      }
+      const entryShortcodes = Array.isArray(entry.shortcodes)
+        ? entry.shortcodes
+            .map((value) => {
+              if (typeof value === 'string' || typeof value === 'number') {
+                const normalized = String(value).trim();
+                return normalized.length > 0 ? normalized : null;
+              }
+              return null;
+            })
+            .filter(Boolean)
+        : [];
+      if (entryShortcodes.length === 0) {
+        return null;
+      }
+      const timestampCandidate = Number(entry.timestamp);
+      return {
+        blockHeight,
+        timestamp: Number.isFinite(timestampCandidate) ? timestampCandidate : null,
+        shortcodes: entryShortcodes,
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => a.blockHeight - b.blockHeight);
   walletAgentState = {
     blockHeight: Number.isFinite(numericBlock) ? numericBlock : null,
     shortcodes: shortcodes
@@ -540,8 +817,10 @@ function setWalletAgentState(agentPayload, fallbackBlockHeight) {
         return null;
       })
       .filter(Boolean),
+    blocks: normalizedBlocks,
   };
   applyWalletAgentAvatars();
+  renderWalletBlockEntries();
 }
 
 async function applyWalletAgentAvatars() {
