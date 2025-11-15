@@ -549,12 +549,34 @@ function resetWalletHistoryEntries(removeFromDom = true) {
   walletEntries.forEach((entry) => entry.remove());
 }
 
-function formatWalletBlockDate(timestampSeconds) {
-  if (!Number.isFinite(timestampSeconds) || timestampSeconds <= 0) {
+function deriveWalletBlockTimestamp(blockHeight) {
+  if (baseBlockHeight === null || !(baseBlockDate instanceof Date)) {
+    return null;
+  }
+  if (!Number.isFinite(blockHeight)) {
+    return null;
+  }
+  const deltaHeights = baseBlockHeight - blockHeight;
+  if (!Number.isFinite(deltaHeights)) {
+    return null;
+  }
+  const approxMs = baseBlockDate.getTime() - deltaHeights * BLOCK_INTERVAL_MS;
+  if (!Number.isFinite(approxMs)) {
+    return null;
+  }
+  return approxMs / 1000;
+}
+
+function formatWalletBlockDate(blockHeight, timestampSeconds) {
+  let resolvedTimestamp = Number(timestampSeconds);
+  if (!Number.isFinite(resolvedTimestamp) || resolvedTimestamp <= 0) {
+    resolvedTimestamp = deriveWalletBlockTimestamp(blockHeight);
+  }
+  if (!Number.isFinite(resolvedTimestamp) || resolvedTimestamp <= 0) {
     return 'Unknown time';
   }
-  const isMilliseconds = timestampSeconds > 1e12;
-  const date = new Date(isMilliseconds ? timestampSeconds : timestampSeconds * 1000);
+  const isMilliseconds = resolvedTimestamp > 1e12;
+  const date = new Date(isMilliseconds ? resolvedTimestamp : resolvedTimestamp * 1000);
   if (Number.isNaN(date.getTime())) {
     return 'Unknown time';
   }
@@ -652,7 +674,7 @@ function createWalletHistoryEntryElement(entry, token) {
   entryEl.dataset.walletEntry = 'true';
   entryEl.innerHTML = `
     <div class="title">
-      <h3>${formatWalletBlockDate(timestampSeconds)}</h3>
+      <h3>${formatWalletBlockDate(blockHeight, timestampSeconds)}</h3>
       <p>BLOCK ${formatBlock(blockHeight)}</p>
     </div>
     <div class="body">
@@ -679,6 +701,14 @@ function canLoadMoreWalletHistory() {
   return walletHistoryRenderedCount < walletAgentState.blocks.length;
 }
 
+function getWalletHistoryInsertionAnchor() {
+  const firstWalletEntry = timelineEl.querySelector('.entry[data-wallet-entry="true"]');
+  if (firstWalletEntry) {
+    return firstWalletEntry;
+  }
+  return timelineEl.querySelector('.entry:not([data-wallet-entry="true"])');
+}
+
 function prependWalletHistoryEntries(count) {
   if (!Number.isFinite(count) || count <= 0) {
     return false;
@@ -686,8 +716,8 @@ function prependWalletHistoryEntries(count) {
   if (!canLoadMoreWalletHistory()) {
     return false;
   }
-  const firstNormalEntry = timelineEl.querySelector('.entry:not([data-wallet-entry="true"])');
-  if (!firstNormalEntry) {
+  const anchorEntry = getWalletHistoryInsertionAnchor();
+  if (!anchorEntry) {
     return false;
   }
   const blockEntries = walletAgentState.blocks.slice(
@@ -713,7 +743,7 @@ function prependWalletHistoryEntries(count) {
   if (!fragment.childNodes.length) {
     return false;
   }
-  timelineEl.insertBefore(fragment, firstNormalEntry);
+  timelineEl.insertBefore(fragment, anchorEntry);
   walletHistoryRenderedCount += appendedCount;
   return true;
 }
