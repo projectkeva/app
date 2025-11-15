@@ -222,7 +222,7 @@ export default function GetAgentsScreen() {
     if (blockHeights.length === 0) {
       return [];
     }
-    blockHeights.sort((a, b) => a - b);
+    blockHeights.sort((a, b) => b - a);
     const entries = [];
     try {
       await BlueElectrum.waitTillConnected();
