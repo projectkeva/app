@@ -1037,12 +1037,36 @@ function formatTimerValue(diffMs) {
   return `${mm}:${ss}`;
 }
 
-function getInitialElapsedTimerText(timestampMs) {
-  if (!Number.isFinite(timestampMs)) {
+function getBaseBlockTimestampMs() {
+  if (!(baseBlockDate instanceof Date)) {
+    return null;
+  }
+  const ts = baseBlockDate.getTime();
+  return Number.isFinite(ts) ? ts : null;
+}
+
+function getTimestampMsForEntryIndex(entryIndex) {
+  if (!Number.isFinite(entryIndex)) {
+    return null;
+  }
+  const baseTimestamp = getBaseBlockTimestampMs();
+  if (!Number.isFinite(baseTimestamp)) {
+    return null;
+  }
+  const offset = entryIndex * BLOCK_INTERVAL_MS;
+  return baseTimestamp + offset;
+}
+
+function getInitialElapsedTimerText(timestampMs, entryIndex) {
+  let effectiveTimestamp = Number.isFinite(timestampMs) ? timestampMs : null;
+  if (!Number.isFinite(effectiveTimestamp)) {
+    effectiveTimestamp = getTimestampMsForEntryIndex(entryIndex);
+  }
+  if (!Number.isFinite(effectiveTimestamp)) {
     return '00:00';
   }
   const nowMs = Date.now();
-  const diff = Math.max(0, nowMs - timestampMs);
+  const diff = Math.max(0, nowMs - effectiveTimestamp);
   return formatTimerValue(diff);
 }
 
@@ -1087,7 +1111,7 @@ function buildEntry(height, date, index) {
   let timerText = '00:00';
   if (showTimer) {
     timerText = timerMode === 'elapsed'
-      ? getInitialElapsedTimerText(timestampMs)
+      ? getInitialElapsedTimerText(timestampMs, index)
       : getInitialCountdownTimerText(index);
   }
   const timerHtml = showTimer
@@ -1473,6 +1497,7 @@ function computeTargetMsForEntry(entryIndex) {
 
 function updateTimers() {
   const nowMs = Date.now();
+  const baseTimestampMs = getBaseBlockTimestampMs();
   document.querySelectorAll('.entry').forEach(entry => {
     if (entry.dataset.timerDisabled === 'true') {
       return;
@@ -1483,24 +1508,28 @@ function updateTimers() {
     }
 
     const timerMode = entry.dataset.timerMode || 'countdown';
+    const entryIndex = Number(entry.dataset.index);
     if (timerMode === 'elapsed') {
-      const startMs = Number(entry.dataset.timestampMs);
+      let startMs = Number(entry.dataset.timestampMs);
+      if (!Number.isFinite(startMs)) {
+        startMs = getTimestampMsForEntryIndex(entryIndex);
+      }
       if (!Number.isFinite(startMs)) {
         timerEl.textContent = '⏱ 00:00';
         return;
       }
       let diff = nowMs - startMs;
       if (diff < 0) diff = 0;
-      const mm = String(Math.floor(diff / 60000)).padStart(2, '0');
-      const ss = String(Math.floor((diff % 60000) / 1000)).padStart(2, '0');
-      timerEl.textContent = '⏱ ' + mm + ':' + ss;
+      timerEl.textContent = '⏱ ' + formatTimerValue(diff);
       return;
     }
 
-    const entryIndex = Number(entry.dataset.index);
     const targetMs = computeTargetMsForEntry(entryIndex);
     if (!Number.isFinite(targetMs)) {
-      if (Number.isFinite(entryIndex) && entryIndex === 1) {
+      if (Number.isFinite(entryIndex) && entryIndex === 1 && Number.isFinite(baseTimestampMs)) {
+        const elapsed = Math.max(0, nowMs - baseTimestampMs);
+        timerEl.textContent = '⏳ ' + formatTimerValue(elapsed);
+      } else if (Number.isFinite(entryIndex) && entryIndex === 1) {
         timerEl.textContent = '⏳ 00:30';
       } else {
         timerEl.textContent = '⏳ 99:99';
@@ -1511,15 +1540,13 @@ function updateTimers() {
     let diff = targetMs - nowMs;
     const rawDiff = diff;
     if (diff < 0) diff = 0;
-    const mm = String(Math.floor(diff / 60000)).padStart(2, '0');
-    const ss = String(Math.floor((diff % 60000) / 1000)).padStart(2, '0');
-    timerEl.textContent = '⏳ ' + mm + ':' + ss;
+    timerEl.textContent = '⏳ ' + formatTimerValue(diff);
 
     const isSecondEntry = Number.isFinite(entryIndex) && entryIndex === 1;
     if (isSecondEntry && rawDiff > 0) {
       secondRowHadPositiveTime = true;
     }
-    const isTimerZero = rawDiff <= 0 && mm === '00' && ss === '00';
+    const isTimerZero = rawDiff <= 0 || diff <= 0;
     if (
       !autoReloadTriggered &&
       hasAppServerReadyForRefresh &&
