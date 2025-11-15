@@ -683,30 +683,17 @@ function parseHeaderTimestampFromHex(headerHex) {
   return timestamp;
 }
 
-function parseFiniteNumber(value) {
-  if (typeof value === 'number') {
-    return Number.isFinite(value) ? value : null;
-  }
-  if (typeof value === 'string') {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : null;
-  }
-  return null;
-}
-
 function extractTimestampFromHeader(header) {
   if (!header) {
     return null;
   }
 
   if (typeof header === 'object') {
-    const timestampFromHeader = parseFiniteNumber(header.timestamp);
-    if (timestampFromHeader !== null) {
-      return timestampFromHeader;
+    if (Number.isFinite(header.timestamp)) {
+      return Number(header.timestamp);
     }
-    const timeField = parseFiniteNumber(header.time);
-    if (timeField !== null) {
-      return timeField;
+    if (Number.isFinite(header.time)) {
+      return Number(header.time);
     }
     if (typeof header.hex === 'string') {
       return parseHeaderTimestampFromHex(header.hex);
@@ -725,9 +712,9 @@ function normalizeLatestHeader(headerSub) {
   let timestamp = null;
 
   const applyCandidate = candidate => {
-    if (timestamp === null) {
+    if (!Number.isFinite(timestamp)) {
       const parsedTimestamp = extractTimestampFromHeader(candidate);
-      if (parsedTimestamp !== null) {
+      if (Number.isFinite(parsedTimestamp)) {
         timestamp = parsedTimestamp;
       }
     }
@@ -735,8 +722,8 @@ function normalizeLatestHeader(headerSub) {
 
   if (Array.isArray(headerSub)) {
     if (headerSub.length > 0) {
-      const maybeHeight = parseFiniteNumber(headerSub[0]);
-      if (maybeHeight !== null) {
+      const maybeHeight = Number(headerSub[0]);
+      if (Number.isFinite(maybeHeight)) {
         height = maybeHeight;
       }
     }
@@ -744,14 +731,12 @@ function normalizeLatestHeader(headerSub) {
       applyCandidate(headerSub[i]);
     }
   } else if (typeof headerSub === 'object' && headerSub !== null) {
-    const maybeHeight = parseFiniteNumber(headerSub.height);
-    if (maybeHeight !== null) {
-      height = maybeHeight;
+    if (Number.isFinite(headerSub.height)) {
+      height = Number(headerSub.height);
     }
     if (headerSub.tip && typeof headerSub.tip === 'object') {
-      const tipTimestamp = parseFiniteNumber(headerSub.tip.timestamp);
-      if (tipTimestamp !== null) {
-        timestamp = tipTimestamp;
+      if (Number.isFinite(headerSub.tip.timestamp)) {
+        timestamp = Number(headerSub.tip.timestamp);
       } else {
         applyCandidate(headerSub.tip);
       }
