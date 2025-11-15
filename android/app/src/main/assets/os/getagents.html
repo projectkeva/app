@@ -805,7 +805,7 @@ function setWalletAgentState(agentPayload, fallbackBlockHeight) {
       };
     })
     .filter(Boolean)
-    .sort((a, b) => a.blockHeight - b.blockHeight);
+    .sort((a, b) => b.blockHeight - a.blockHeight);
   walletAgentState = {
     blockHeight: Number.isFinite(numericBlock) ? numericBlock : null,
     shortcodes: shortcodes
