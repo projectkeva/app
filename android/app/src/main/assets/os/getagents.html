@@ -511,9 +511,10 @@ const timelineWrapEl = document.getElementById('timelineWrap');
 const MAX_BOOT_LINES = 5;
 let bootLineCounter = 0;
 let bootPreludeTimer = null;
+let bootOverlayDismissed = false;
 
 function appendBootLine(message, tone = 'normal', options = {}) {
-  if (!bootLogEl) {
+  if (!bootLogEl || bootOverlayDismissed) {
     return;
   }
   const { force = false } = options;
@@ -533,7 +534,7 @@ function appendBootLine(message, tone = 'normal', options = {}) {
 }
 
 function resetBootOverlay() {
-  if (!bootOverlay || !bootLogEl) {
+  if (!bootOverlay || !bootLogEl || bootOverlayDismissed) {
     return;
   }
   bootOverlay.classList.remove('boot-overlay--hidden');
@@ -547,7 +548,7 @@ function resetBootOverlay() {
 }
 
 function playBootPrelude() {
-  if (!bootOverlay) {
+  if (!bootOverlay || bootOverlayDismissed) {
     return;
   }
   const lines = [
@@ -568,13 +569,15 @@ function playBootPrelude() {
 }
 
 function concludeBootOverlay(delay = 0) {
-  if (!bootOverlay) {
+  if (!bootOverlay || bootOverlayDismissed) {
+    triggerTimelineReveal();
     return;
   }
   if (bootPreludeTimer) {
     clearTimeout(bootPreludeTimer);
     bootPreludeTimer = null;
   }
+  bootOverlayDismissed = true;
   setTimeout(() => {
     bootOverlay.classList.add('boot-overlay--portal');
     const duration = parseInt(getComputedStyle(bootOverlay).getPropertyValue('--portal-duration'), 10);
@@ -583,6 +586,11 @@ function concludeBootOverlay(delay = 0) {
       bootOverlay.classList.add('boot-overlay--hidden');
       bootOverlay.classList.remove('boot-overlay--portal');
       triggerTimelineReveal();
+      setTimeout(() => {
+        if (bootOverlay.parentNode) {
+          bootOverlay.parentNode.removeChild(bootOverlay);
+        }
+      }, 700);
     }, fallthroughDelay);
   }, delay);
 }
