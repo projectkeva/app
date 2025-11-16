@@ -87,16 +87,20 @@ export async function handleGetAgentsNamespaceRequest(request, sendMessage) {
     }
 
     await refreshNamespaceWalletState(namespaceWallet);
-    respond({
+    const result = {
       success: true,
       namespaceId,
       txid: typeof broadcastResult === 'string' ? broadcastResult : null,
-    });
+    };
+    respond(result);
+    return result;
   } catch (error) {
     console.warn('GetAgentsNamespace: namespace creation failed', error);
-    respond({
+    const result = {
       success: false,
       error: (error && error.message) || String(error),
-    });
+    };
+    respond(result);
+    return result;
   }
 }
