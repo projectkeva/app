@@ -77,106 +77,6 @@
     pointer-events: none;
   }
 
-  .timeline-reveal {
-    position: fixed;
-    inset: 0;
-    pointer-events: none;
-    z-index: 900;
-    opacity: 0;
-    --timeline-reveal-duration: 900ms;
-    transition: opacity 0.3s ease;
-  }
-
-  .timeline-reveal.timeline-reveal--hidden {
-    visibility: hidden;
-  }
-
-  .timeline-reveal.timeline-reveal--active {
-    opacity: 1;
-    visibility: visible;
-  }
-
-  .timeline-reveal-panel {
-    position: absolute;
-    top: 0;
-    width: 52%;
-    height: 100%;
-    background: linear-gradient(180deg, #1b3de4 0%, #132cbe 45%, #0b1e99 100%);
-    box-shadow: 0 0 60px rgba(13, 46, 145, 0.65);
-    transform: translateX(0);
-  }
-
-  .timeline-reveal-panel::after {
-    content: '';
-    position: absolute;
-    inset: 0;
-    background: radial-gradient(circle at center, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0));
-    opacity: 0.35;
-  }
-
-  .timeline-reveal-panel.timeline-reveal-panel--left {
-    left: 0;
-  }
-
-  .timeline-reveal-panel.timeline-reveal-panel--right {
-    right: 0;
-  }
-
-  .timeline-reveal.timeline-reveal--active .timeline-reveal-panel--left {
-    animation: timelineRevealLeft var(--timeline-reveal-duration) ease forwards;
-  }
-
-  .timeline-reveal.timeline-reveal--active .timeline-reveal-panel--right {
-    animation: timelineRevealRight var(--timeline-reveal-duration) ease forwards;
-  }
-
-  @keyframes timelineRevealLeft {
-    0% {
-      transform: translateX(0);
-    }
-    50% {
-      transform: translateX(-8%);
-    }
-    100% {
-      transform: translateX(-110%);
-    }
-  }
-
-  @keyframes timelineRevealRight {
-    0% {
-      transform: translateX(0);
-    }
-    50% {
-      transform: translateX(8%);
-    }
-    100% {
-      transform: translateX(110%);
-    }
-  }
-
-  .timeline-reveal-scan {
-    position: absolute;
-    inset: 0;
-    background: radial-gradient(circle at center, rgba(255, 255, 255, 0.15), transparent 65%);
-    opacity: 0;
-    transform: scale(0.8);
-  }
-
-  .timeline-reveal.timeline-reveal--active .timeline-reveal-scan {
-    animation: timelineRevealScan var(--timeline-reveal-duration) ease forwards;
-  }
-
-  @keyframes timelineRevealScan {
-    0% {
-      opacity: 0.25;
-      transform: scale(0.92);
-    }
-    100% {
-      opacity: 0;
-      transform: scale(1.2);
-    }
-  }
-
   .boot-overlay.boot-overlay--portal .boot-overlay-inner {
     opacity: 0;
     transform: scale(0.94);
@@ -592,11 +492,6 @@
     <div class="boot-log" id="bootLog"></div>
   </div>
 </div>
-<div class="timeline-reveal timeline-reveal--hidden" id="timelineReveal">
-  <div class="timeline-reveal-panel timeline-reveal-panel--left"></div>
-  <div class="timeline-reveal-panel timeline-reveal-panel--right"></div>
-  <div class="timeline-reveal-scan"></div>
-</div>
 <div class="wrap" id="timelineWrap">
   <div class="timeline" id="timeline">
     <div class="status" id="status">Loading the latest block data…</div>
@@ -612,11 +507,9 @@ const NAMESPACE_CLICK_THROTTLE_MS = 1000;
 const NAMESPACE_BUTTON_BUSY_LABEL = 'Creating…';
 const bootOverlay = document.getElementById('bootOverlay');
 const bootLogEl = document.getElementById('bootLog');
-const timelineRevealEl = document.getElementById('timelineReveal');
 const timelineWrapEl = document.getElementById('timelineWrap');
 let bootLineCounter = 0;
 let bootPreludeTimer = null;
-let timelineRevealTimeoutId = null;
 
 function appendBootLine(message, tone = 'normal') {
   if (!bootLogEl) {
@@ -697,25 +590,7 @@ function revealTimelineContent() {
 }
 
 function triggerTimelineReveal() {
-  if (!timelineRevealEl) {
-    return;
-  }
   revealTimelineContent();
-  if (timelineRevealTimeoutId) {
-    clearTimeout(timelineRevealTimeoutId);
-    timelineRevealTimeoutId = null;
-  }
-  timelineRevealEl.classList.remove('timeline-reveal--hidden');
-  // restart animation cycle
-  void timelineRevealEl.offsetWidth;
-  timelineRevealEl.classList.add('timeline-reveal--active');
-  const duration = parseInt(getComputedStyle(timelineRevealEl).getPropertyValue('--timeline-reveal-duration'), 10);
-  const totalDuration = Number.isFinite(duration) ? duration : 900;
-  timelineRevealTimeoutId = setTimeout(() => {
-    timelineRevealEl.classList.remove('timeline-reveal--active');
-    timelineRevealEl.classList.add('timeline-reveal--hidden');
-    timelineRevealTimeoutId = null;
-  }, totalDuration + 80);
 }
 
 function failBootOverlay(message) {
