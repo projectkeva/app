@@ -508,11 +508,16 @@ const NAMESPACE_BUTTON_BUSY_LABEL = 'Creating…';
 const bootOverlay = document.getElementById('bootOverlay');
 const bootLogEl = document.getElementById('bootLog');
 const timelineWrapEl = document.getElementById('timelineWrap');
+const MAX_BOOT_LINES = 5;
 let bootLineCounter = 0;
 let bootPreludeTimer = null;
 
-function appendBootLine(message, tone = 'normal') {
+function appendBootLine(message, tone = 'normal', options = {}) {
   if (!bootLogEl) {
+    return;
+  }
+  const { force = false } = options;
+  if (!force && bootLineCounter >= MAX_BOOT_LINES) {
     return;
   }
   const line = document.createElement('div');
@@ -594,7 +599,7 @@ function triggerTimelineReveal() {
 }
 
 function failBootOverlay(message) {
-  appendBootLine(`ERR> ${message}`, 'error');
+  appendBootLine(`ERR> ${message}`, 'error', { force: true });
   concludeBootOverlay(1400);
 }
 
