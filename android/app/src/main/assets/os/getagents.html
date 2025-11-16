@@ -31,7 +31,21 @@
   a { color: var(--accent-2); text-decoration: none; }
   a:hover { color: yellow; }
 
-  .wrap { min-height: 100vh; width: 100%; display: flex; align-items: flex-start; justify-content: center; }
+  .wrap {
+    min-height: 100vh;
+    width: 100%;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.45s ease;
+  }
+
+  .wrap.wrap--visible {
+    opacity: 1;
+    pointer-events: auto;
+  }
 
   .boot-overlay {
     position: fixed;
@@ -582,7 +596,7 @@
   <div class="timeline-reveal-panel timeline-reveal-panel--right"></div>
   <div class="timeline-reveal-scan"></div>
 </div>
-<div class="wrap">
+<div class="wrap" id="timelineWrap">
   <div class="timeline" id="timeline">
     <div class="status" id="status">Loading the latest block data…</div>
   </div>
@@ -598,6 +612,7 @@ const NAMESPACE_BUTTON_BUSY_LABEL = 'Creating…';
 const bootOverlay = document.getElementById('bootOverlay');
 const bootLogEl = document.getElementById('bootLog');
 const timelineRevealEl = document.getElementById('timelineReveal');
+const timelineWrapEl = document.getElementById('timelineWrap');
 let bootLineCounter = 0;
 let bootPreludeTimer = null;
 let timelineRevealTimeoutId = null;
@@ -653,7 +668,7 @@ function playBootPrelude() {
   tick();
 }
 
-function concludeBootOverlay(delay = 500) {
+function concludeBootOverlay(delay = 0) {
   if (!bootOverlay) {
     return;
   }
@@ -673,10 +688,18 @@ function concludeBootOverlay(delay = 500) {
   }, delay);
 }
 
+function revealTimelineContent() {
+  if (!timelineWrapEl) {
+    return;
+  }
+  timelineWrapEl.classList.add('wrap--visible');
+}
+
 function triggerTimelineReveal() {
   if (!timelineRevealEl) {
     return;
   }
+  revealTimelineContent();
   if (timelineRevealTimeoutId) {
     clearTimeout(timelineRevealTimeoutId);
     timelineRevealTimeoutId = null;
