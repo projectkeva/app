@@ -41,6 +41,8 @@
     display: flex;
     align-items: center;
     justify-content: center;
+    overflow: hidden;
+    --portal-duration: 900ms;
     transition: opacity 0.65s ease, transform 0.65s ease;
   }
 
@@ -48,6 +50,43 @@
     opacity: 0;
     pointer-events: none;
     transform: scale(1.02);
+  }
+
+  .boot-overlay::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(180deg, #1b3de4 0%, #132cbe 45%, #0b1e99 100%);
+    transform: scaleY(0.02);
+    transform-origin: center;
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .boot-overlay.boot-overlay--portal .boot-overlay-inner {
+    opacity: 0;
+    transform: scale(0.94);
+    transition: opacity 0.3s ease, transform 0.3s ease;
+  }
+
+  .boot-overlay.boot-overlay--portal::after {
+    opacity: 1;
+    animation: bootPortalOpen var(--portal-duration) ease forwards;
+  }
+
+  @keyframes bootPortalOpen {
+    0% {
+      transform: scaleY(0.02);
+      opacity: 1;
+    }
+    60% {
+      transform: scaleY(1.05);
+      opacity: 1;
+    }
+    100% {
+      transform: scaleY(1.3);
+      opacity: 0;
+    }
   }
 
   .boot-overlay-inner {
@@ -516,7 +555,13 @@ function concludeBootOverlay(delay = 500) {
     bootPreludeTimer = null;
   }
   setTimeout(() => {
-    bootOverlay.classList.add('boot-overlay--hidden');
+    bootOverlay.classList.add('boot-overlay--portal');
+    const duration = parseInt(getComputedStyle(bootOverlay).getPropertyValue('--portal-duration'), 10);
+    const fallthroughDelay = Number.isFinite(duration) ? duration : 900;
+    setTimeout(() => {
+      bootOverlay.classList.add('boot-overlay--hidden');
+      bootOverlay.classList.remove('boot-overlay--portal');
+    }, fallthroughDelay);
   }, delay);
 }
 
@@ -1589,6 +1634,7 @@ function handleNativeTimelineMessage(event) {
         appendBootLine(`CHAIN> Tip ${payload.height} @ ${formatDateTime(tipDate)}`);
       }
       appendBootLine('SYS> Rendering Kevacoin agent grid…');
+      appendBootLine('LINK> Connecting the last human node…', 'accent');
       applyTimelineData(payload.height, payload.timestamp);
       setWalletAgentState(payload.walletAgents || null, payload.height);
       concludeBootOverlay();
