@@ -693,7 +693,7 @@ class AgentChat extends React.Component {
     try {
       const savedCode = await AsyncStorage.getItem(STORY_LANG_CODE_STORAGE_KEY);
       if (!savedCode) {
-        this.setState({ storyLangCode: 'en' });
+        this.setState({ storyLangCode: getDefaultStoryLangCode() });
         return;
       }
       const normalized = normalizeStoryLangCode(savedCode);
@@ -701,10 +701,10 @@ class AgentChat extends React.Component {
         this.setState({ storyLangCode: normalized });
         return;
       }
-      this.setState({ storyLangCode: 'en' });
+      this.setState({ storyLangCode: getDefaultStoryLangCode() });
     } catch (error) {
       console.warn('Failed to restore story language', error);
-      this.setState({ storyLangCode: 'en' });
+      this.setState({ storyLangCode: getDefaultStoryLangCode() });
     }
   };
 
@@ -758,8 +758,8 @@ class AgentChat extends React.Component {
       const roleData = roleRead.value;
       const roleMemoryCard = String(roleData?.memory || roleData?.memoryText || roleData?.memory_card || '').trim();
       const savedRoleLang = await AsyncStorage.getItem(getRoleLangStorageKey(this.agentId));
-      const roleLang = normalizeStoryLangCode(savedRoleLang);
-      const resolvedRoleLang = roleLang || (typeof currentRoleData?.roleLangCode === 'string' && currentRoleData.roleLangCode ? normalizeStoryLangCode(currentRoleData.roleLangCode) : null);
+      const roleLang = savedRoleLang ? normalizeStoryLangCode(savedRoleLang) : null;
+      const resolvedRoleLang = roleLang || (typeof currentRoleData?.roleLangCode === 'string' && currentRoleData.roleLangCode ? normalizeStoryLangCode(currentRoleData.roleLangCode) : getDefaultStoryLangCode());
       const summary = await this.readRoleConversationSummary(roleSlug);
       return {
         roleSlug,
@@ -2440,7 +2440,7 @@ class AgentChat extends React.Component {
     );
   };
 
-  updateAgentMessage = (requestId, newText) => {
+  updateAgentMessage = (requestId, newText, extra = null) => {
     this.shouldScrollToEnd = true;
     return new Promise(resolve => {
       this.setState(
@@ -2455,6 +2455,7 @@ class AgentChat extends React.Component {
             didUpdate = true;
             updatedCurrent = {
               ...message,
+              ...(extra || {}),
               text: newText,
               pending: false,
               completedAt: Date.now(),
@@ -2585,6 +2586,9 @@ class AgentChat extends React.Component {
 
   handleTriggers = async (text, userMessage = null) => {
     const trimmed = text.trim();
+    const previousHandlingCommandReply = this._handlingCommandReply;
+    this._handlingCommandReply = trimmed.startsWith('/');
+    try {
     if (await this.handlePendingAISetupInput?.(trimmed)) {
       return;
     }
@@ -2657,6 +2661,9 @@ class AgentChat extends React.Component {
       userMessage,
       submittedAt: Number(userMessage?.timestamp || 0),
     });
+    } finally {
+      this._handlingCommandReply = previousHandlingCommandReply;
+    }
   };
 
   runAutoCommand = async () => {
@@ -2776,7 +2783,61 @@ class AgentChat extends React.Component {
     });
   };
 
-  replyFromAgent = text => {
+  isModelMenuLikeText = text => {
+    const raw = String(text || '');
+    const lower = raw.toLowerCase();
+    const normalized = raw.replace(/\s+/g, ' ').trim();
+    const trimmedLower = normalized.toLowerCase();
+    return lower.includes('[[/a')
+      || lower.includes('[[/d')
+      || lower.includes('[[/destiny')
+      || lower.includes('[[/reopen')
+      || trimmedLower === '/a'
+      || trimmedLower.startsWith('/a ')
+      || trimmedLower.startsWith('/d menu')
+      || trimmedLower.startsWith('/destiny menu')
+      || trimmedLower.startsWith('model status')
+      || trimmedLower.startsWith('role model check')
+      || trimmedLower.startsWith('model selected')
+      || trimmedLower.startsWith('model ')
+      || trimmedLower.startsWith('language ')
+      || trimmedLower === 'model'
+      || trimmedLower === 'memory'
+      || trimmedLower === 'voice'
+      || trimmedLower === 'voice settings'
+      || trimmedLower.includes('memory story voice model')
+      || trimmedLower.includes('story voice model')
+      || trimmedLower.startsWith('select model')
+      || trimmedLower.startsWith('enter api key')
+      || trimmedLower.startsWith('remove key')
+      || trimmedLower.startsWith('custom model')
+      || trimmedLower.startsWith('unknown provider')
+      || trimmedLower.startsWith('failed to load models')
+      || trimmedLower.startsWith('xkeva is built in.')
+      || lower.includes('free channel')
+      || lower.includes('free window')
+      || lower.includes('free_window_inactive')
+      || lower.includes('xkeva 免费通道')
+      || lower.includes('xkeva 免費通道')
+      || normalized.includes('当前 xKEVA 免费通道已结束')
+      || normalized.includes('目前 xKEVA 免費通道已結束')
+      || normalized.startsWith('模型状态')
+      || normalized.startsWith('模型狀態')
+      || normalized.startsWith('モデル状態')
+      || normalized.startsWith('모델 상태')
+      || normalized.startsWith('模型')
+      || normalized.startsWith('语言')
+      || normalized.startsWith('語言')
+      || normalized.startsWith('记忆')
+      || normalized.startsWith('記憶')
+      || normalized.startsWith('选择模型')
+      || normalized.startsWith('移除密钥')
+      || normalized.startsWith('自定义模型')
+      || normalized.startsWith('输入 API key')
+      || normalized.startsWith('輸入 API key');
+  };
+
+  replyFromAgent = (text, options = {}) => {
     const t = String(text || '')
       .trim()
       .toLowerCase();
@@ -2791,7 +2852,11 @@ class AgentChat extends React.Component {
       return;
     }
 
-    const reply = this.buildMessage(text, 'agent');
+    const reply = {
+      ...this.buildMessage(text, 'agent'),
+      ...(options || {}),
+      _useSatoshiAvatar: Boolean(options?._useSatoshiAvatar || this._handlingCommandReply || this.isModelMenuLikeText(text)),
+    };
     if (String(text || '').trim()) {
       this.setStoryLinkStatus(this.getStoryMenuText('linkActive'));
       this.maybeFinalizeStoryRunFromText(text);
@@ -2889,9 +2954,13 @@ class AgentChat extends React.Component {
   };
 
   appendStoryCommandMessage = text => {
-    this.appendMessage(this.buildMessage(text, 'agent'), 'user', {
+    this.appendMessage({
+      ...this.buildMessage(text, 'agent'),
+      _useSatoshiAvatar: true,
+    }, 'user', {
       _renderMode: 'commands',
       _localOnly: true,
+      _useSatoshiAvatar: true,
     });
   };
 
@@ -2906,6 +2975,7 @@ class AgentChat extends React.Component {
       _renderMode: 'commands',
       _localOnly: true,
       _storyStatusRecord: true,
+      _useSatoshiAvatar: true,
     };
 
     this.appendMessage(message, 'user', {
@@ -4730,7 +4800,7 @@ class AgentChat extends React.Component {
     const { shortCode } = this.props.navigation.state.params || {};
     const localAvatarUri = this.state.agentLocalAvatarUri;
     const avatarUri = buildHeadAssetUri(shortCode);
-    const source = this.shouldUseSatoshiPreLLMAvatar(item, visibleIndex)
+    const source = (item?._useSatoshiAvatar || this.isModelMenuLikeText(item?.text || '') || this.shouldUseSatoshiPreLLMAvatar(item, visibleIndex))
       ? SATOSHI_PRE_LLM_AVATAR_SOURCE
       : (localAvatarUri ? { uri: localAvatarUri } : (avatarUri ? { uri: avatarUri } : require('../../img/bluebeast.png')));
     return (

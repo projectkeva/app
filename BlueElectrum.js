@@ -1,7 +1,6 @@
 import AsyncStorage from '@react-native-community/async-storage';
 import { Platform } from 'react-native';
 import { AppStorage, LegacyWallet, SegwitBech32Wallet, SegwitP2SHWallet } from './class';
-import Toast from 'react-native-root-toast';
 const bitcoin = require('bitcoinjs-lib');
 const ElectrumClient = require('./electrum-client');
 let reverse = require('buffer-reverse');
@@ -65,9 +64,7 @@ function parsePort(portValue) {
 
 async function connectMain() {
   let savedPeer = await getSavedPeer();
-  const peersToTry = savedPeer && savedPeer.host && (savedPeer.tcp || savedPeer.ssl)
-    ? [savedPeer]
-    : getDefaultHardcodedPeers();
+  const peersToTry = [savedPeer && savedPeer.host && (savedPeer.tcp || savedPeer.ssl) ? savedPeer : { ...defaultPeer }];
 
   for (let usingPeer of peersToTry) {
     currentPeer = usingPeer;
@@ -251,15 +248,8 @@ module.exports.ping = async function() {
       }
     } catch (connErr) {
       hideStatus(toast);
-      Toast.show(loc._.bad_network, {
-        duration: Toast.durations.LONG,
-        position: Toast.positions.BOTTOM,
-        shadow: true,
-        animation: true,
-        hideOnPress: true,
-        delay: 0
-      });
-      throw new Error(loc._.bad_network);
+      console.warn('BlueElectrum: reconnect failed after ping', connErr);
+      throw new Error(`Electrum reconnect failed after ping: ${connErr && connErr.message ? connErr.message : connErr}`);
     }
     return true;
   }

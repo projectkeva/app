@@ -6,6 +6,7 @@ body.desktop {
   font-family:'MS Sans Serif',sans-serif;
   margin:0; padding:0;
   height:100vh; overflow:hidden;
+  -webkit-tap-highlight-color:rgba(0,0,0,0);
 }
 .desktop-icons {
   display:flex;
@@ -20,6 +21,17 @@ body.desktop {
   width:64px; margin:10px;
   cursor:pointer;
   color:#fff; text-shadow:1px 1px 2px #000;
+  outline:none;
+  -webkit-tap-highlight-color:rgba(0,0,0,0);
+  -webkit-touch-callout:none;
+  -webkit-user-select:none;
+  user-select:none;
+}
+.icon:active,
+.icon:focus {
+  background:transparent;
+  box-shadow:none;
+  outline:none;
 }
 .icon img {
   width:48px; height:48px;

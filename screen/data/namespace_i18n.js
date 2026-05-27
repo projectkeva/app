@@ -1,6 +1,8 @@
 import AsyncStorage from '@react-native-community/async-storage';
 import RNFS from 'react-native-fs';
 
+let loc = require('../../loc');
+
 const CHAT_DIR = `${RNFS.DocumentDirectoryPath}/agent_chats`;
 const LAST_ROLE_SPACE_PATH = `${CHAT_DIR}/_last_role_space.json`;
 const LAST_STORY_SPACE_PATH = `${CHAT_DIR}/_last_story_space.json`;
@@ -8,11 +10,6 @@ const LAST_CHAT_SPACE_PATH = `${CHAT_DIR}/_last_chat_space.json`;
 
 const SUPPORTED_LANGS = ['en', 'zh-cn', 'zh-tw', 'ja', 'ko', 'es', 'fr', 'zar-afr', 'hr-hr', 'cs-cz', 'da-dk', 'de', 'el', 'it', 'fi-fi', 'id-id', 'hu-hu', 'nl-nl', 'nb-no', 'pt-br', 'pt-pt', 'ru', 'sv-se', 'th-th', 'vi', 'ua', 'tr', 'zar-xho'];
 const CACHE_TTL_MS = 1000;
-
-let cachedFallbackLang = 'en';
-let cachedFallbackAt = 0;
-let pendingFallbackResolve = null;
-const namespaceLangCache = new Map();
 
 export const normalizeNamespaceLang = lang => {
   const raw = String(lang || '').trim().toLowerCase().replace(/_/g, '-');
@@ -29,6 +26,19 @@ export const normalizeNamespaceLang = lang => {
   const base = aliased.split('-')[0];
   return SUPPORTED_LANGS.includes(base) ? base : 'en';
 };
+
+
+const getCurrentInterfaceLanguage = () =>
+  (loc && typeof loc.getInterfaceLanguage === 'function' && loc.getInterfaceLanguage()) ||
+  (loc && typeof loc.getLanguage === 'function' && loc.getLanguage()) ||
+  'en';
+
+const getDefaultNamespaceLang = () => normalizeNamespaceLang(getCurrentInterfaceLanguage() || 'en');
+
+let cachedFallbackLang = getDefaultNamespaceLang();
+let cachedFallbackAt = 0;
+let pendingFallbackResolve = null;
+const namespaceLangCache = new Map();
 
 export const getRoleLangStorageKey = agentId => `role_lang_code_${encodeURIComponent(String(agentId || 'default'))}`;
 
@@ -403,7 +413,7 @@ const resolveFallbackLanguage = async (force = false) => {
       }
     } catch (_) {}
 
-    cachedFallbackLang = 'en';
+    cachedFallbackLang = getDefaultNamespaceLang();
     cachedFallbackAt = Date.now();
     return cachedFallbackLang;
   })();

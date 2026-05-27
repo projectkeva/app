@@ -2,6 +2,248 @@
 // Attach LLM provider registry + /a command + LLM chat calls onto AgentChat instance.
 
 import RNFS from 'react-native-fs';
+import TcpSocketModule from 'react-native-tcp-socket';
+import { getXkevaApiUrl, getXkevaApiUrls, XKEVA_APP_TOKEN } from '../../class/xkeva-api';
+import { decodeBase64, getNamespaceScriptHash } from '../../class/keva-ops';
+
+let lazyBitcoin = null;
+let lazyBlueElectrum = null;
+let lazyBlueApp = null;
+
+function getBitcoin() {
+  if (!lazyBitcoin) lazyBitcoin = require('bitcoinjs-lib');
+  return lazyBitcoin;
+}
+
+function getBlueElectrum() {
+  if (!lazyBlueElectrum) {
+    const mod = require('../../BlueElectrum');
+    lazyBlueElectrum = mod.default || mod;
+  }
+  return lazyBlueElectrum;
+}
+
+function getBlueApp() {
+  if (!lazyBlueApp) lazyBlueApp = require('../../BlueApp');
+  return lazyBlueApp;
+}
+
+const TcpSocket = TcpSocketModule.default || TcpSocketModule;
+const XKEVA_MIN_CHAT_REQUEST_INTERVAL_MS = 1000;
+const XKEVA_SATOSHI_CREATED_KEY = 'Agent Created';
+const XKEVA_DEVICE_ID_PATH = `${RNFS.DocumentDirectoryPath}/xkeva_device_id.txt`;
+let lastXkevaChatRequestAt = 0;
+let xkevaChatRequestQueue = Promise.resolve();
+let xkevaDeviceIdPromise = null;
+
+function isValidXkevaDeviceId(value) {
+  return /^[A-Za-z0-9_.:-]{8,160}$/.test(String(value || '').trim());
+}
+
+function makeXkevaDeviceId() {
+  const seed = `${Date.now()}:${Math.random()}:${Math.random()}:${RNFS.DocumentDirectoryPath || ''}`;
+  let digest = '';
+  try {
+    digest = getBitcoin().crypto.sha256(Buffer.from(seed, 'utf8')).toString('hex');
+  } catch (_) {
+    digest = `${Date.now().toString(36)}${Math.random().toString(36).slice(2)}${Math.random().toString(36).slice(2)}`;
+  }
+  return `xkeva-${String(digest).replace(/[^a-zA-Z0-9]/g, '').slice(0, 32)}`;
+}
+
+async function getXkevaDeviceId() {
+  if (!xkevaDeviceIdPromise) {
+    xkevaDeviceIdPromise = (async () => {
+      try {
+        const exists = await RNFS.exists(XKEVA_DEVICE_ID_PATH);
+        if (exists) {
+          const saved = String(await RNFS.readFile(XKEVA_DEVICE_ID_PATH, 'utf8') || '').trim();
+          if (isValidXkevaDeviceId(saved)) return saved;
+        }
+      } catch (_) {}
+      const next = makeXkevaDeviceId();
+      try {
+        await RNFS.writeFile(XKEVA_DEVICE_ID_PATH, next, 'utf8');
+      } catch (_) {}
+      return next;
+    })();
+  }
+  return xkevaDeviceIdPromise;
+}
+
+function wait(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function waitForXkevaChatRequestTurn(intervalMs = XKEVA_MIN_CHAT_REQUEST_INTERVAL_MS) {
+  const minIntervalMs = Math.max(0, Number(intervalMs || 0));
+  const turn = xkevaChatRequestQueue.catch(() => {}).then(async () => {
+    const elapsed = Date.now() - lastXkevaChatRequestAt;
+    if (elapsed < minIntervalMs) {
+      await wait(minIntervalMs - elapsed);
+    }
+    lastXkevaChatRequestAt = Date.now();
+  });
+  xkevaChatRequestQueue = turn;
+  await turn;
+}
+
+function derEncodeLength(length) {
+  if (length < 0x80) return Buffer.from([length]);
+  const bytes = [];
+  let n = length;
+  while (n > 0) {
+    bytes.unshift(n & 0xff);
+    n = Math.floor(n / 256);
+  }
+  return Buffer.from([0x80 | bytes.length, ...bytes]);
+}
+
+function derEncodeInteger(bytes) {
+  let value = Buffer.from(bytes || []);
+  while (value.length > 1 && value[0] === 0 && (value[1] & 0x80) === 0) {
+    value = value.slice(1);
+  }
+  if (value.length === 0) value = Buffer.from([0]);
+  if (value[0] & 0x80) value = Buffer.concat([Buffer.from([0]), value]);
+  return Buffer.concat([Buffer.from([0x02]), derEncodeLength(value.length), value]);
+}
+
+function derEncodeEcdsaSignature(compactSignature) {
+  const sig = Buffer.from(compactSignature || []);
+  if (sig.length !== 64) throw new Error('Invalid compact signature length');
+  const body = Buffer.concat([derEncodeInteger(sig.slice(0, 32)), derEncodeInteger(sig.slice(32, 64))]);
+  return Buffer.concat([Buffer.from([0x30]), derEncodeLength(body.length), body]);
+}
+
+function buildXkevaWalletAuthMessage(data = {}) {
+  return [
+    'xKEVA wallet auth v1',
+    `address=${String(data.address || '').trim()}`,
+    `namespace=${String(data.namespace || '').trim()}`,
+    `agent_created_txid=${String(data.txid || '').trim()}`,
+    `agent_created_height=${Number(data.createdHeight || 0) || 0}`,
+    `current_height=${Number(data.currentHeight || 0) || 0}`,
+    `device_id=${String(data.deviceId || '').trim()}`,
+    `nonce=${String(data.nonce || '').trim()}`,
+  ].join('\n');
+}
+
+function getWalletWifForAddress(wallet, address) {
+  if (!wallet) return '';
+  const targetAddress = String(address || '').trim();
+  try {
+    if (targetAddress && typeof wallet._getWifForAddress === 'function') {
+      const wif = wallet._getWifForAddress(targetAddress);
+      if (wif) return wif;
+    }
+  } catch (_) {}
+  try {
+    const secret = typeof wallet.getSecret === 'function' ? wallet.getSecret() : wallet.secret;
+    if (secret) {
+      getBitcoin().ECPair.fromWIF(String(secret));
+      return String(secret);
+    }
+  } catch (_) {}
+  return '';
+}
+
+function addressesFromPublicKey(pubkey) {
+  const key = Buffer.from(pubkey || []);
+  const addresses = [];
+  try {
+    const p2pkh = getBitcoin().payments.p2pkh({ pubkey: key }).address;
+    if (p2pkh) addresses.push(p2pkh);
+  } catch (_) {}
+  try {
+    const p2wpkh = getBitcoin().payments.p2wpkh({ pubkey: key });
+    const p2sh = getBitcoin().payments.p2sh({ redeem: p2wpkh }).address;
+    if (p2sh) addresses.push(p2sh);
+  } catch (_) {}
+  return addresses;
+}
+
+function trimText(value) {
+  return String(value || '').trim();
+}
+
+function decodeKvKey(value) {
+  if (!value) return '';
+  try {
+    const decoded = decodeBase64(value);
+    return typeof decoded === 'string' ? decoded : String(value || '');
+  } catch (_) {
+    return String(value || '');
+  }
+}
+
+function normalizeKvTime(value) {
+  const n = Number(value || 0);
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  return n > 100000000000 ? Math.floor(n / 1000) : Math.floor(n);
+}
+
+function getKvTxid(kv) {
+  return trimText(kv?.tx_hash || kv?.txid || kv?.tx || kv?.hash || '');
+}
+
+function getNamespaceCreateTxid(info) {
+  return trimText(
+    info?.namespaceCreateTxid
+    || info?.namespace_create_txid
+    || info?.serverNamespaceMeta?.namespace_create_txid
+    || info?.serverNamespaceMeta?.namespaceCreateTxid
+    || info?.serverNamespaceMeta?.namespace_create_tx
+    || info?.serverNamespaceMeta?.txid
+    || info?.serverNamespaceMeta?.txId
+    || '',
+  );
+}
+
+function getNamespaceCreateHeight(info) {
+  return Number(
+    info?.namespaceCreateHeight
+    || info?.namespace_create_height
+    || info?.serverNamespaceMeta?.namespace_create_height
+    || info?.serverNamespaceMeta?.namespaceCreateHeight
+    || 0,
+  ) || 0;
+}
+
+function getNamespaceCreateTime(info) {
+  return normalizeKvTime(
+    info?.namespaceCreateTxTime
+    || info?.namespace_create_tx_time
+    || info?.serverNamespaceMeta?.namespace_create_tx_time
+    || info?.serverNamespaceMeta?.namespaceCreateTxTime
+    || info?.serverNamespaceMeta?.created_at_unix
+    || info?.serverNamespaceMeta?.createdAtUnix
+    || 0,
+  );
+}
+
+function findSatoshiNamespaceInfo(namespacesInput) {
+  const namespaces = namespacesInput?.namespaces || namespacesInput || {};
+  const list = Array.isArray(namespaces) ? namespaces : Object.values(namespaces);
+  const satoshiList = list.filter(item => {
+    const name = trimText(item?.displayName || item?.name || '').toLowerCase();
+    return name === 'satoshi';
+  });
+  if (satoshiList.length <= 1) return satoshiList[0] || null;
+  return satoshiList.slice().sort((a, b) => {
+    const aShort = Number(String(a?.shortCode || '').replace(/\D/g, '')) || Number.MAX_SAFE_INTEGER;
+    const bShort = Number(String(b?.shortCode || '').replace(/\D/g, '')) || Number.MAX_SAFE_INTEGER;
+    return aShort - bShort;
+  })[0];
+}
+
+
+function buildXkevaFreeWindowInactiveMessage(errorJson) {
+  const err = errorJson?.error || errorJson || {};
+  const message = String(err?.message || '').trim();
+  return message;
+}
+
 
 export function attachAgentChatLLM(agent, deps) {
   if (!agent) return;
@@ -130,7 +372,7 @@ export function attachAgentChatLLM(agent, deps) {
         const merged = await agent.loadMergedRegistry();
         const override = merged?.[providerName] || {};
         const builtinDef = LLM_PROVIDERS[providerName] || null;
-        const baseUrl = String(override.baseUrl || builtinDef?.baseUrl || '')
+        const baseUrl = String(providerName === 'xkeva' ? await getXkevaApiUrl() : (override.baseUrl || builtinDef?.baseUrl || ''))
           .trim()
           .replace(/\/$/, '');
         if (!baseUrl) return null;
@@ -139,7 +381,7 @@ export function attachAgentChatLLM(agent, deps) {
           provider: providerName,
           baseUrl,
           apiKey: override.apiKey || '',
-          model: override.model || (builtinDef?.defaultModel || 'default'),
+          model: builtinDef?.noKeyRequired === true ? (builtinDef?.defaultModel || providerName) : (override.model || (builtinDef?.defaultModel || 'default')),
           updatedAt: override.updatedAt || Date.now(),
         };
       } catch (error) {
@@ -240,12 +482,13 @@ export function attachAgentChatLLM(agent, deps) {
       const entryCustom = customReg?.[normalized];
 
       if (LLM_PROVIDERS[normalized]) {
-        const baseUrlOverride = entryBuiltin?.baseUrl ? String(entryBuiltin.baseUrl).trim().replace(/\/$/, '') : '';
+        const dynamicXkevaBaseUrl = normalized === 'xkeva' ? await getXkevaApiUrl() : '';
+        const baseUrlOverride = normalized === 'xkeva' ? '' : (entryBuiltin?.baseUrl ? String(entryBuiltin.baseUrl).trim().replace(/\/$/, '') : '');
         return {
           name: normalized,
           def: {
             ...LLM_PROVIDERS[normalized],
-            baseUrl: baseUrlOverride || LLM_PROVIDERS[normalized].baseUrl,
+            baseUrl: dynamicXkevaBaseUrl || baseUrlOverride || LLM_PROVIDERS[normalized].baseUrl,
           },
           source: baseUrlOverride ? 'builtin_override' : 'builtin',
         };
@@ -280,32 +523,44 @@ export function attachAgentChatLLM(agent, deps) {
       startup = false,
     }) => {
       const baseUrl = String(
-        baseUrlOverride || registryEntry?.baseUrl || providerDef?.baseUrl || llmConfig?.baseUrl || '',
+        providerName === 'xkeva'
+          ? await getXkevaApiUrl()
+          : (baseUrlOverride || registryEntry?.baseUrl || providerDef?.baseUrl || llmConfig?.baseUrl || ''),
       )
         .trim()
         .replace(/\/$/, '');
-      const apiKey =
-        apiKeyOverride ||
-        registryEntry?.apiKey ||
-        (llmConfig?.provider === providerName ? llmConfig?.apiKey : '') ||
-        '';
+      const providerUsesServerKey = providerDef?.noKeyRequired === true;
+      const apiKey = providerUsesServerKey
+        ? (apiKeyOverride || registryEntry?.apiKey || '')
+        : (
+          apiKeyOverride ||
+          registryEntry?.apiKey ||
+          (llmConfig?.provider === providerName ? llmConfig?.apiKey : '') ||
+          ''
+        );
       if (!baseUrl) throw new Error('Missing baseUrl');
 
-      const models = await agent.fetchOpenAICompatModels(baseUrl, apiKey, providerDef?.authHeader);
-      if (models.length === 0) {
+      const defaultModel = String(providerDef?.defaultModel || '').trim();
+      const isFixedModelProvider = providerDef?.fixedModel === true || providerDef?.skipModelFetch === true;
+      const models = isFixedModelProvider
+        ? [defaultModel || 'default']
+        : await agent.fetchOpenAICompatModels(baseUrl, apiKey, providerDef?.authHeader);
+      if (!isFixedModelProvider && models.length === 0) {
         if (!apiKey) throw new Error('Missing api key');
         throw new Error('Failed to load models');
       }
 
       const savedModel = llmConfig && llmConfig.provider === providerName ? String(llmConfig.model || '').trim() : '';
-      const defaultModel = String(providerDef?.defaultModel || '').trim();
-      const selectedModel =
-        modelOverride ||
-        (savedModel && models.includes(savedModel) ? savedModel : '') ||
-        (defaultModel && models.includes(defaultModel) ? defaultModel : '') ||
-        models[0] ||
-        defaultModel ||
-        'default';
+      const selectedModel = isFixedModelProvider
+        ? (defaultModel || 'default')
+        : (
+          modelOverride ||
+          (savedModel && models.includes(savedModel) ? savedModel : '') ||
+          (defaultModel && models.includes(defaultModel) ? defaultModel : '') ||
+          models[0] ||
+          defaultModel ||
+          'default'
+        );
 
       const next = { provider: providerName, baseUrl, apiKey, model: selectedModel, updatedAt: Date.now() };
       agent.setState({ llmConfig: next });
@@ -336,6 +591,8 @@ export function attachAgentChatLLM(agent, deps) {
         if (!agent?.isStoryScope && !suppressStartupModelNotice) {
           agent.replyFromAgent(hello);
         }
+      } else if (isFixedModelProvider) {
+        agent.replyFromAgent(`${hello}\nEndpoint: ${baseUrl}`);
       } else {
         const modelLines = models.map(modelId => `[[/a model ${modelId}|${modelId}]]`);
         agent.replyFromAgent(`${hello}\nEndpoint: ${baseUrl}\nSelect model:\n${modelLines.join('\n\n')}`);
@@ -449,10 +706,421 @@ export function attachAgentChatLLM(agent, deps) {
       return msgs.slice(-LLM_HISTORY_LIMIT);
     });
 
+
+  const getUtf8ByteLength = value => {
+    const text = String(value || '');
+    if (typeof Buffer !== 'undefined' && Buffer?.byteLength) {
+      return Buffer.byteLength(text, 'utf8');
+    }
+    return unescape(encodeURIComponent(text)).length;
+  };
+
+  const parseHttpUrlForTcp = url => {
+    const match = String(url || '').match(/^http:\/\/([^\/:?#]+)(?::(\d+))?([^?#]*)(\?[^#]*)?/i);
+    if (!match) return null;
+    return {
+      host: match[1],
+      port: match[2] ? Number(match[2]) : 80,
+      path: `${match[3] || '/'}${match[4] || ''}`,
+    };
+  };
+
+  const decodeChunkedHttpBody = body => {
+    let input = String(body || '');
+    let output = '';
+    while (input.length) {
+      const lineEnd = input.indexOf('\r\n');
+      if (lineEnd < 0) return body;
+      const sizeText = input.slice(0, lineEnd).split(';')[0].trim();
+      const size = parseInt(sizeText, 16);
+      if (!Number.isFinite(size)) return body;
+      if (size === 0) return output;
+      const start = lineEnd + 2;
+      output += input.slice(start, start + size);
+      input = input.slice(start + size + 2);
+    }
+    return output;
+  };
+
+  const tcpHttpJsonRequest = (url, options = {}) => {
+    const parsed = parseHttpUrlForTcp(url);
+    if (!parsed) return Promise.reject(new Error('Unsupported local HTTP URL'));
+
+    const method = String(options.method || 'GET').toUpperCase();
+    const body = String(options.body || '');
+    const headers = { ...(options.headers || {}) };
+    if (body && !headers['Content-Type']) headers['Content-Type'] = 'application/json';
+    if (body && !headers['Content-Length']) headers['Content-Length'] = String(getUtf8ByteLength(body));
+
+    return new Promise((resolve, reject) => {
+      let raw = '';
+      let settled = false;
+      const socket = TcpSocket.createConnection({ host: parsed.host, port: parsed.port, timeout: 15000 }, () => {
+        const headerLines = Object.entries(headers).map(([key, value]) => `${key}: ${value}`);
+        socket.write([
+          `${method} ${parsed.path} HTTP/1.1`,
+          `Host: ${parsed.host}:${parsed.port}`,
+          'Connection: close',
+          ...headerLines,
+          '',
+          body,
+        ].join('\r\n'));
+      });
+
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        const split = raw.indexOf('\r\n\r\n');
+        const head = split >= 0 ? raw.slice(0, split) : '';
+        let responseBody = split >= 0 ? raw.slice(split + 4) : raw;
+        const statusMatch = head.match(/^HTTP\/\d(?:\.\d)?\s+(\d+)/i);
+        const status = statusMatch ? Number(statusMatch[1]) : 0;
+        if (/transfer-encoding:\s*chunked/i.test(head)) {
+          responseBody = decodeChunkedHttpBody(responseBody);
+        }
+        resolve({
+          ok: status >= 200 && status < 300,
+          status,
+          json: async () => JSON.parse(responseBody || '{}'),
+          text: async () => responseBody,
+        });
+      };
+
+      socket.on('data', data => { raw += data.toString(); });
+      socket.on('error', error => {
+        if (!settled) {
+          settled = true;
+          reject(error);
+        }
+      });
+      socket.on('close', finish);
+      socket.setTimeout(130000, () => {
+        if (!settled) {
+          settled = true;
+          try { socket.destroy(); } catch (_) {}
+          reject(new Error('Local HTTP request timeout'));
+        }
+      });
+    });
+  };
+
+
+  agent.checkXkevaAvailable =
+    agent.checkXkevaAvailable ||
+    (async () => {
+      const roots = await getXkevaApiUrls();
+      for (const root of roots) {
+        const statusUrl = `${String(root || '').trim().replace(/\/$/, '')}/status`;
+        if (!statusUrl) continue;
+        try {
+          const response = /^http:\/\//i.test(statusUrl)
+            ? await tcpHttpJsonRequest(statusUrl, { method: 'GET', headers: { Accept: 'application/json' } })
+            : await fetch(statusUrl, { method: 'GET', headers: { Accept: 'application/json' } });
+          const json = await response.json().catch(() => ({}));
+          if (response.ok && json?.configured === true) return true;
+        } catch (error) {
+          console.warn('xkeva availability check failed', { root, error });
+        }
+      }
+      return false;
+    });
+
+  agent.fetchXkevaModelStatus =
+    agent.fetchXkevaModelStatus ||
+    (async (baseUrl = '', options = {}) => {
+      const root = String(baseUrl || (await getXkevaApiUrl()) || '').trim().replace(/\/$/, '');
+      if (!root) throw new Error('xKEVA status endpoint missing.');
+      const statusUrl = `${root}/status`;
+      const includeWalletAuth = options?.includeWalletAuth === true;
+      let headers = { Accept: 'application/json' };
+      if (includeWalletAuth) {
+        try {
+          if (typeof agent.buildXkevaRequestHeaders === 'function') {
+            headers = { ...headers, ...(await agent.buildXkevaRequestHeaders(root)) };
+          }
+        } catch (authError) {
+          console.warn('xkeva model status wallet headers unavailable', authError);
+        }
+      }
+
+      try {
+        const response = /^http:\/\//i.test(statusUrl)
+          ? await tcpHttpJsonRequest(statusUrl, { method: 'GET', headers })
+          : await fetch(statusUrl, { method: 'GET', headers });
+        const json = await response.json().catch(() => ({}));
+        return { ok: response.ok, status: response.status, json, url: statusUrl };
+      } catch (error) {
+        return { ok: false, status: 0, json: null, url: statusUrl, error: String(error?.message || error || '') };
+      }
+    });
+
+  agent.getXkevaSatoshiAgentCreatedMeta =
+    agent.getXkevaSatoshiAgentCreatedMeta ||
+    (async () => {
+      const cache = agent._xkevaSatoshiCreatedMetaCache || {};
+      if (cache.ts && Date.now() - cache.ts < 15000) {
+        return cache.value || null;
+      }
+
+      const remember = value => {
+        agent._xkevaSatoshiCreatedMetaCache = { ts: Date.now(), value: value || null };
+        return value || null;
+      };
+
+      try {
+        const params = agent.props?.navigation?.state?.params || {};
+        const listInfo = findSatoshiNamespaceInfo(agent.props?.namespaceList);
+        const routeInfo = {
+          namespaceId: trimText(params.namespaceId || ''),
+          id: trimText(params.namespaceId || ''),
+          shortCode: trimText(params.shortCode || params.shortId || ''),
+          displayName: trimText(params.displayName || params.name || ''),
+          txid: trimText(params.agentCreatedTxid || params.txid || params.txId || ''),
+          agentCreatedTxid: trimText(params.agentCreatedTxid || params.txid || params.txId || ''),
+          agentCreatedTxTime: normalizeKvTime(params.agentCreatedTxTime || params.agent_created_tx_time || 0),
+          agentCreatedHeight: Number(params.agentCreatedHeight || params.agent_created_height || 0) || 0,
+          namespaceCreateTxid: trimText(params.namespaceCreateTxid || params.namespace_create_txid || params.txid || params.txId || ''),
+          namespaceCreateHeight: Number(params.namespaceCreateHeight || params.namespace_create_height || 0) || 0,
+          namespaceCreateTxTime: normalizeKvTime(params.namespaceCreateTxTime || params.namespace_create_tx_time || 0),
+        };
+        const routeLooksSatoshi = !!routeInfo.namespaceId && (
+          routeInfo.displayName.toLowerCase() === 'satoshi'
+          || String(params.roleEntrySource || '').toLowerCase().includes('satoshi')
+        );
+        const info = routeLooksSatoshi ? { ...(listInfo || {}), ...routeInfo } : listInfo;
+        const rawNamespaceId = trimText(info?.namespaceId || '');
+        const fallbackId = trimText(info?.id || '');
+        const namespaceId = rawNamespaceId || (/^\d+$/.test(fallbackId) ? '' : fallbackId);
+        if (!namespaceId) return remember(null);
+        const routeAgentCreatedTxid = trimText(info?.agentCreatedTxid || info?.agent_created_txid || info?.txId || info?.txid || '');
+        const routeAgentCreatedTxTime = normalizeKvTime(info?.agentCreatedTxTime || info?.agent_created_tx_time || 0);
+        const routeAgentCreatedHeight = Number(info?.agentCreatedHeight || info?.agent_created_height || 0) || 0;
+        const routeNamespaceCreateTxid = getNamespaceCreateTxid(info);
+
+        const BlueElectrum = getBlueElectrum();
+        await BlueElectrum.ping();
+        if (typeof BlueElectrum.waitTillConnected === 'function') {
+          await BlueElectrum.waitTillConnected();
+        }
+
+        const history = await BlueElectrum.blockchainKeva_getKeyValues(getNamespaceScriptHash(namespaceId), -1);
+        const keyValues = Array.isArray(history?.keyvalues) ? history.keyvalues : (Array.isArray(history) ? history : []);
+        let createdKv = null;
+        for (const kv of keyValues) {
+          const key = decodeKvKey(kv?.key).trim();
+          if (key !== XKEVA_SATOSHI_CREATED_KEY) continue;
+          const time = normalizeKvTime(kv?.time || kv?.timestamp || kv?.block_time);
+          if (!time) continue;
+          if (!createdKv || time > normalizeKvTime(createdKv?.time || createdKv?.timestamp || createdKv?.block_time)) {
+            createdKv = kv;
+          }
+        }
+        if (!createdKv) {
+          if (routeAgentCreatedTxid || routeNamespaceCreateTxid) {
+            const currentHeight = Number(await getBlueElectrum().blockchainBlock_count().catch(() => 0)) || 0;
+            return remember({
+              namespaceId,
+              shortCode: trimText(info?.shortCode || ''),
+              txid: routeAgentCreatedTxid,
+              agentCreatedTxid: routeAgentCreatedTxid,
+              namespaceCreateTxid: routeNamespaceCreateTxid,
+              agentCreatedTxTime: routeAgentCreatedTxTime,
+              agentCreatedHeight: 0,
+              currentHeight,
+              blocksSinceCreated: null,
+              freeEligible: !!routeNamespaceCreateTxid,
+              txSource: routeAgentCreatedTxid ? 'agent_created_pending' : 'namespace_create_only',
+            });
+          }
+          return remember(null);
+        }
+
+        const agentCreatedTxTime = normalizeKvTime(createdKv?.time || createdKv?.timestamp || createdKv?.block_time);
+        const agentCreatedHeight = Number(createdKv?.height || createdKv?.block_height || createdKv?.confirmed_height || 0) || 0;
+        let currentHeight = 0;
+        try {
+          currentHeight = Number(await getBlueElectrum().blockchainBlock_count()) || 0;
+        } catch (heightError) {
+          console.warn('Failed to read current block height for xkeva free window', heightError);
+        }
+        const blocksSinceCreated = agentCreatedHeight > 0 && currentHeight > 0 ? Math.max(0, currentHeight - agentCreatedHeight) : null;
+        return remember({
+          namespaceId,
+          shortCode: trimText(info?.shortCode || ''),
+          txid: getKvTxid(createdKv) || routeAgentCreatedTxid,
+          agentCreatedTxid: getKvTxid(createdKv) || routeAgentCreatedTxid,
+          namespaceCreateTxid: routeNamespaceCreateTxid,
+          agentCreatedTxTime,
+          agentCreatedHeight,
+          currentHeight,
+          blocksSinceCreated,
+          freeEligible: blocksSinceCreated !== null,
+          txSource: 'agent_created',
+        });
+      } catch (error) {
+        console.warn('Failed to read Satoshi Agent Created tx time for xkeva free window', error);
+        return remember(null);
+      }
+    });
+
+  agent.getXkevaAuthWalletMaterial =
+    agent.getXkevaAuthWalletMaterial ||
+    (async () => {
+      const params = agent.props?.navigation?.state?.params || {};
+      const walletId = String(params.walletId || '').trim();
+      const paramAddress = String(params.rootAddress || params.addr || params.address || '').trim();
+      const BlueApp = getBlueApp();
+      const wallets = typeof BlueApp.getWallets === 'function' ? BlueApp.getWallets() : [];
+      let wallet = walletId ? wallets.find(w => w.getID && w.getID() === walletId) : null;
+
+      if (!wallet && paramAddress) {
+        for (const candidate of wallets) {
+          try {
+            const candidateAddress = typeof candidate.getAddressAsync === 'function' ? await candidate.getAddressAsync() : (candidate.getAddress ? candidate.getAddress() : '');
+            if (String(candidateAddress || '') === paramAddress) {
+              wallet = candidate;
+              break;
+            }
+            if (typeof candidate.weOwnAddress === 'function' && candidate.weOwnAddress(paramAddress)) {
+              wallet = candidate;
+              break;
+            }
+          } catch (_) {}
+        }
+      }
+
+      if (!wallet && wallets.length === 1) {
+        wallet = wallets[0];
+      }
+      if (!wallet) {
+        console.warn('xKEVA wallet auth: no local wallet found', { walletId, paramAddress, walletCount: wallets.length });
+        return null;
+      }
+
+      let address = paramAddress;
+      const namespaceId = String(params.namespaceId || '').trim();
+      if (!address && namespaceId && wallet) {
+        try {
+          if (typeof wallet.fetchTransactions === 'function') await wallet.fetchTransactions();
+          if (typeof wallet.fetchUtxo === 'function') await wallet.fetchUtxo();
+          const transactions = typeof wallet.getTransactions === 'function' ? (wallet.getTransactions() || []) : [];
+          const utxos = typeof wallet.getUtxo === 'function' ? (wallet.getUtxo() || []) : [];
+          for (const utxo of utxos) {
+            const tx = transactions.find(item => String(utxo?.txId || '') === String(item?.hash || item?.txid || ''));
+            if (!tx || !Array.isArray(tx.n)) continue;
+            if (String(tx.n[0] || '') === namespaceId && Number(utxo?.vout) === Number(tx.n[1])) {
+              address = String(utxo?.address || '').trim();
+              if (address) break;
+            }
+          }
+        } catch (error) {
+          console.warn('xKEVA wallet auth: failed to resolve namespace owner address', { namespaceId, walletId, error });
+        }
+      }
+      if (!address) {
+        address = typeof wallet.getAddressAsync === 'function' ? await wallet.getAddressAsync() : (wallet.getAddress ? wallet.getAddress() : '');
+      }
+      if (!address) {
+        console.warn('xKEVA wallet auth: wallet has no address', { walletId, paramAddress, namespaceId });
+        return null;
+      }
+      const wif = getWalletWifForAddress(wallet, address);
+      if (!wif) {
+        console.warn('xKEVA wallet auth: no WIF for address', { address, walletId, type: wallet.type });
+        return null;
+      }
+
+      const keyPair = getBitcoin().ECPair.fromWIF(wif);
+      const compressedPubKey = Buffer.from(keyPair.publicKey || []);
+      const derivedAddresses = addressesFromPublicKey(compressedPubKey);
+      if (derivedAddresses.length > 0 && !derivedAddresses.some(item => String(item) === String(address))) {
+        console.warn('xKEVA wallet auth address mismatch', { address, derivedAddresses });
+        return null;
+      }
+      return {
+        wallet,
+        address: String(address),
+        keyPair,
+        pubKeyHex: compressedPubKey.toString('hex'),
+      };
+    });
+
+  agent.fetchXkevaAuthNonce =
+    agent.fetchXkevaAuthNonce ||
+    (async (baseUrl, headers = {}) => {
+      const root = String(baseUrl || (await getXkevaApiUrl()) || '').trim().replace(/\/$/, '');
+      if (!root) throw new Error('xKEVA auth endpoint missing.');
+      const url = `${root}/auth/nonce`;
+      const response = /^http:\/\//i.test(url)
+        ? await tcpHttpJsonRequest(url, { method: 'GET', headers })
+        : await fetch(url, { method: 'GET', headers });
+      const json = await response.json().catch(() => ({}));
+      if (!response.ok || !json?.nonce) {
+        throw new Error(json?.error?.message || `xKEVA auth nonce failed (${response.status})`);
+      }
+      return String(json.nonce || '').trim();
+    });
+
+  agent.buildXkevaRequestHeaders =
+    agent.buildXkevaRequestHeaders ||
+    (async (baseUrl = '') => {
+      const deviceId = await getXkevaDeviceId();
+      const roleLangCode = typeof agent.getRoleLangCode === 'function' ? String(agent.getRoleLangCode() || '').trim() : '';
+      const headers = { 'X-XKEVA-App-Token': XKEVA_APP_TOKEN, 'X-XKEVA-Device-Id': deviceId };
+      if (roleLangCode) {
+        headers['X-XKEVA-Role-Language'] = roleLangCode;
+        headers['Accept-Language'] = roleLangCode;
+      }
+      const meta = await agent.getXkevaSatoshiAgentCreatedMeta();
+      if (meta?.namespaceId) {
+        headers['X-XKEVA-Satoshi-Namespace-Id'] = meta.namespaceId;
+        if (meta.shortCode) headers['X-XKEVA-Satoshi-Short-Code'] = meta.shortCode;
+        if (meta.txid) headers['X-XKEVA-Agent-Created-Txid'] = meta.txid;
+        if (meta.namespaceCreateTxid) headers['X-XKEVA-Namespace-Create-Txid'] = meta.namespaceCreateTxid;
+        if (meta.agentCreatedTxTime) headers['X-XKEVA-Agent-Created-Tx-Time'] = String(meta.agentCreatedTxTime);
+        headers['X-XKEVA-Agent-Created-Height'] = String(meta.agentCreatedHeight || 0);
+        headers['X-XKEVA-Current-Height'] = String(meta.currentHeight || 0);
+        if (meta.blocksSinceCreated !== null && meta.blocksSinceCreated !== undefined) {
+          headers['X-XKEVA-Blocks-Since-Agent-Created'] = String(meta.blocksSinceCreated);
+        }
+      }
+
+      const auth = await agent.getXkevaAuthWalletMaterial();
+      if (auth?.address && auth?.keyPair && auth?.pubKeyHex) {
+        const nonceHeaders = {
+          'X-XKEVA-App-Token': XKEVA_APP_TOKEN,
+          'X-XKEVA-Device-Id': deviceId,
+          'X-XKEVA-Wallet-Address': auth.address,
+          ...(headers['X-XKEVA-Satoshi-Namespace-Id'] ? { 'X-XKEVA-Satoshi-Namespace-Id': headers['X-XKEVA-Satoshi-Namespace-Id'] } : {}),
+        };
+        const nonce = await agent.fetchXkevaAuthNonce(baseUrl, nonceHeaders);
+        const message = buildXkevaWalletAuthMessage({
+          address: auth.address,
+          namespace: headers['X-XKEVA-Satoshi-Namespace-Id'] || '',
+          txid: headers['X-XKEVA-Agent-Created-Txid'] || '',
+          createdHeight: headers['X-XKEVA-Agent-Created-Height'] || 0,
+          currentHeight: headers['X-XKEVA-Current-Height'] || 0,
+          deviceId,
+          nonce,
+        });
+        const digest = getBitcoin().crypto.sha256(Buffer.from(message, 'utf8'));
+        const signature = auth.keyPair.sign(digest);
+        const derSignature = derEncodeEcdsaSignature(signature);
+        headers['X-XKEVA-Wallet-Address'] = auth.address;
+        headers['X-XKEVA-Wallet-PubKey'] = auth.pubKeyHex;
+        headers['X-XKEVA-Auth-Nonce'] = nonce;
+        headers['X-XKEVA-Auth-Signature'] = derSignature.toString('base64');
+        headers['X-XKEVA-Auth-Version'] = '1';
+      }
+      return headers;
+    });
+
   agent.callOpenAICompatible =
     agent.callOpenAICompatible ||
-    (async ({ baseUrl, apiKey, model, systemPrompt, recent, authHeader }) => {
-      const url = `${String(baseUrl || '').replace(/\/$/, '')}/chat/completions`;
+    (async ({ baseUrl, apiKey, model, systemPrompt, recent, authHeader, fallbackBaseUrls = [], minRequestIntervalMs = 0 }) => {
+      const roots = [baseUrl, ...(fallbackBaseUrls || [])]
+        .map(url => String(url || '').trim().replace(/\/$/, ''))
+        .filter((url, index, list) => url && list.indexOf(url) === index);
 
       const messages = [
         { role: 'system', content: systemPrompt },
@@ -474,13 +1142,46 @@ export function attachAgentChatLLM(agent, deps) {
         body.temperature = 0.7;
       }
 
-      const resp = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body) });
-      const json = await resp.json().catch(() => ({}));
+      const requestBody = JSON.stringify(body);
+      let lastError = null;
+      for (const root of roots) {
+        const url = `${root}/chat/completions`;
+        try {
+          if (minRequestIntervalMs > 0) {
+            await waitForXkevaChatRequestTurn(minRequestIntervalMs);
+          }
+          let resp;
+          if (/^http:\/\//i.test(url)) {
+            // React Native fetch may reject cleartext LAN PHP responses as a generic
+            // "Network request failed" before we can read the API JSON body. Use the
+            // TCP HTTP path first for local xKEVA so 403 free_window_inactive is readable.
+            resp = await tcpHttpJsonRequest(url, { method: 'POST', headers, body: requestBody });
+          } else {
+            resp = await fetch(url, { method: 'POST', headers, body: requestBody });
+          }
+          const json = await resp.json().catch(() => ({}));
 
-      if (!resp.ok) {
-        throw new Error(`openai_compat http ${resp.status}: ${JSON.stringify(json).slice(0, 200)}`);
+          if (!resp.ok) {
+            const freeWindowMessage = buildXkevaFreeWindowInactiveMessage(json);
+            if (freeWindowMessage) {
+              const freeWindowError = new Error(freeWindowMessage);
+              freeWindowError.xkevaFreeWindowInactive = true;
+              throw freeWindowError;
+            }
+            throw new Error(`openai_compat http ${resp.status}: ${JSON.stringify(json).slice(0, 200)}`);
+          }
+          const firstMessage = json?.choices?.[0]?.message || {};
+          return firstMessage.content ?? firstMessage.reasoning ?? '';
+        } catch (error) {
+          if (error?.xkevaFreeWindowInactive) {
+            throw error;
+          }
+          lastError = error;
+          console.warn('OpenAI-compatible endpoint failed', { url, error });
+        }
       }
-      return json?.choices?.[0]?.message?.content ?? '';
+
+      throw lastError || new Error('openai_compat request failed');
     });
 
   agent.callAnthropic =
@@ -560,6 +1261,9 @@ export function attachAgentChatLLM(agent, deps) {
   agent.replyFromLLM =
     agent.replyFromLLM ||
     (async (userText, userMessage = null, options = {}) => {
+      if (typeof agent.ensureRoleSummonRitualFreshBeforeLLM === 'function') {
+        await agent.ensureRoleSummonRitualFreshBeforeLLM();
+      }
       const requestId = `${Date.now()}-${Math.random()}`;
       const placeholder = {
         id: `agent-${requestId}`,
@@ -593,9 +1297,17 @@ export function attachAgentChatLLM(agent, deps) {
       } catch (error) {
         console.warn('LLM call failed', error);
         const errorText = error?.message || 'LLM call failed.';
-        await agent.updateAgentMessage(requestId, errorText);
+        const useSatoshiAvatar = Boolean(
+          error?.xkevaFreeWindowInactive
+            || /(?:free channel|free window|free_window_inactive|xkeva\s*免费通道|xkeva\s*免費通道|当前 xKEVA 免费通道已结束|目前 xKEVA 免費通道已結束)/i.test(String(errorText || '')),
+        );
+        await agent.updateAgentMessage(requestId, errorText, useSatoshiAvatar ? { _useSatoshiAvatar: true } : null);
         if (typeof agent.persistStoryLLMReply === 'function') {
-          await agent.persistStoryLLMReply({ requestId, replyText: errorText, placeholder });
+          await agent.persistStoryLLMReply({
+            requestId,
+            replyText: errorText,
+            placeholder: useSatoshiAvatar ? { ...(placeholder || {}), _useSatoshiAvatar: true } : placeholder,
+          });
         }
       }
     });
@@ -616,7 +1328,8 @@ export function attachAgentChatLLM(agent, deps) {
       }
 
       const providerDef = resolved.def;
-      const baseUrl = cfg.baseUrl || providerDef.baseUrl;
+      const isXkevaProvider = cfg.provider === 'xkeva';
+      const baseUrl = isXkevaProvider ? await getXkevaApiUrl() : (cfg.baseUrl || providerDef.baseUrl);
       if (!baseUrl) {
         throw new Error('Provider missing baseUrl. Re-run /a.');
       }
@@ -663,13 +1376,20 @@ export function attachAgentChatLLM(agent, deps) {
 
       let replyText = '';
       if (providerDef.kind === 'openai_compat') {
+        const xkevaHeaders = isXkevaProvider ? await agent.buildXkevaRequestHeaders(baseUrl) : null;
         replyText = await agent.callOpenAICompatible({
           baseUrl,
           apiKey: cfg.apiKey,
           model: cfg.model || providerDef.defaultModel,
           systemPrompt,
           recent,
-          authHeader: providerDef.authHeader || DEFAULT_AUTH_HEADER,
+          authHeader: isXkevaProvider
+            ? () => xkevaHeaders
+            : (providerDef.authHeader || DEFAULT_AUTH_HEADER),
+          // For xKEVA testing, do not fall back to public endpoints.
+          // The 215 API must be the single source of truth for free-window gating.
+          fallbackBaseUrls: [],
+          minRequestIntervalMs: isXkevaProvider ? XKEVA_MIN_CHAT_REQUEST_INTERVAL_MS : 0,
         });
       } else if (providerDef.kind === 'gemini') {
         replyText = await agent.callGemini({
@@ -754,7 +1474,8 @@ export function attachAgentChatLLM(agent, deps) {
 
       if (resolved.source !== 'custom') {
         const hasKey = !!String(registryEntry?.apiKey || '').trim();
-        if (!hasKey) {
+        const noKeyRequired = resolved.def?.noKeyRequired === true;
+        if (!hasKey && !noKeyRequired) {
           await new Promise(resolve =>
             agent.setState(
               {
@@ -813,7 +1534,7 @@ export function attachAgentChatLLM(agent, deps) {
 
       const builtinLines = Object.keys(LLM_PROVIDERS).map(name => {
         const hasCurrentKey = cur?.provider === name && !!String(cur?.apiKey || '').trim();
-        const hasKey = !!String(builtinReg?.[name]?.apiKey || '').trim() || hasCurrentKey;
+        const hasKey = LLM_PROVIDERS[name]?.noKeyRequired === true || !!String(builtinReg?.[name]?.apiKey || '').trim() || hasCurrentKey;
         return `${statusDot(hasKey)} [[/a ${name}|use]] ${name}`;
       });
 
@@ -824,13 +1545,13 @@ export function attachAgentChatLLM(agent, deps) {
       const spacedCustomLines = customLines.flatMap(line => [line, '']);
 
       const roleLang = typeof agent.getRoleLangCode === 'function' ? agent.getRoleLangCode() : null;
-      const isZh = roleLang === 'zh-cn';
-      const addModelLabel = isZh ? '新建模型' : 'Add model';
-      const removeKeyLabel = isZh ? '删除模型' : 'Remove key';
-      const backLabel = isZh ? '返回' : 'Back';
+      const roleText = (key, fallback) => (typeof agent.getRoleUiText === 'function' ? agent.getRoleUiText(key) : '') || fallback;
+      const addModelLabel = roleText('addModel', 'Add model');
+      const removeKeyLabel = roleText('removeModel', 'Remove key');
+      const backLabel = roleText('back', 'Back');
       const apiUsageButton = typeof agent.buildModelApiUsageButtonLine === 'function'
         ? agent.buildModelApiUsageButtonLine('/a apiusage')
-        : `[[/a apiusage|${isZh ? '使用说明' : 'Instructions'}]]`;
+        : `[[/a apiusage|${roleText('apiUsageButton', 'Instructions')}]]`;
 
       agent.replyFromAgent([
         ...spacedBuiltinLines,
@@ -850,8 +1571,9 @@ export function attachAgentChatLLM(agent, deps) {
     (async () => {
       const builtinReg = await agent.readBuiltinRegistry();
       const customReg = await agent.readCustomRegistry();
+      const activeProvider = String(agent.state.llmConfig?.provider || agent.currentLLMConfig?.provider || '').trim().toLowerCase();
       const builtinLines = Object.keys(LLM_PROVIDERS)
-        .filter(name => !!String(builtinReg?.[name]?.apiKey || '').trim())
+        .filter(name => name !== 'xkeva' && (!!String(builtinReg?.[name]?.apiKey || '').trim() || !!builtinReg?.[name] || activeProvider === name))
         .map(name => `[[/a remove builtin ${name}|${name}]]`);
       const customLines = Object.keys(customReg || {}).map(name => `[[/a remove custom ${name}|${customReg?.[name]?.label || name}]]`);
       const lines = ['Remove key / custom model:', '', ...builtinLines, ...customLines];
@@ -996,9 +1718,15 @@ Usage:
           return agent.renderAIRemoveMenu();
         }
         if (targetType === 'builtin') {
+          if (targetName === 'xkeva') {
+            agent.replyFromAgent('xkeva is built in.');
+            await agent.resetAISetupState();
+            await agent.finishAISetupFlow();
+            return;
+          }
           const builtin = (await agent.readBuiltinRegistry()) || {};
           if (builtin[targetName]) {
-            builtin[targetName] = { ...(builtin[targetName] || {}), apiKey: '' };
+            delete builtin[targetName];
             await agent.writeBuiltinRegistry(builtin);
           }
         }

@@ -7,10 +7,20 @@
 <meta http-equiv="Content-Security-Policy" content="default-src * 'unsafe-inline' data: blob: file:;">
 <link rel="stylesheet" href="theme/retro/style.css"/>
 <script src="./i18n.js"></script>
-<script src="./home_i18n.js"></script>
+<script src="./home_i18n.js?v=room-entry"></script>
 <style>
-html, body { margin:0; padding:0; height:100%; background:#000!important;}
+html, body { margin:0; padding:0; height:100%; background:#000!important;-webkit-tap-highlight-color:rgba(0,0,0,0);}
+*,*::before,*::after{-webkit-tap-highlight-color:rgba(0,0,0,0);}
+button,a,.icon,.icon *{outline:none!important;-webkit-tap-highlight-color:rgba(0,0,0,0);-webkit-touch-callout:none;-webkit-user-select:none;user-select:none;}
+.icon:active,.icon:focus,.icon:hover,body.room-launching .icon,body.room-launching .icon *{background:transparent!important;box-shadow:none!important;outline:0!important;}
+body.room-global-black::after{content:"";position:fixed;inset:0;z-index:99999;background:#000;pointer-events:none;}
+body.room-screen-close::before,body.room-screen-close::after{content:"";position:fixed;left:0;width:100%;height:50%;z-index:99999;background:#000;pointer-events:none;opacity:1;transform:scaleY(0);transition:transform 420ms cubic-bezier(.16,.82,.18,1);}
+body.room-screen-close::before{top:0;transform-origin:top center;box-shadow:inset 0 -2px 0 rgba(255,69,232,.22),inset 0 -5px 12px rgba(125,246,255,.12);}
+body.room-screen-close::after{bottom:0;transform-origin:bottom center;box-shadow:inset 0 2px 0 rgba(125,246,255,.2),inset 0 5px 12px rgba(255,69,232,.12);}
+body.room-screen-close.room-screen-close-active::before,body.room-screen-close.room-screen-close-active::after{transform:scaleY(1);}
+body.room-screen-close.room-screen-line-hidden::before,body.room-screen-close.room-screen-line-hidden::after{box-shadow:none;}
 .main-window{width:100vw;height:100vh;margin:0;position:fixed;top:0;left:0;transform:none;transform-origin:center;border-radius:0;box-shadow:none;overflow:hidden;opacity:1;animation:none;background:#000;}
+.main-window.room-shrink-away{transform-origin:0 0;transform:translate(var(--room-screen-left,50vw),var(--room-screen-top,38vh)) scale(var(--room-screen-scale-x,0.36),var(--room-screen-scale-y,0.24));border:1px solid rgba(125,246,255,0.68);border-radius:3px;box-shadow:0 0 0 1px rgba(255,54,237,0.3),0 0 34px rgba(255,54,237,0.38),0 0 68px rgba(30,231,255,0.22);opacity:.92;pointer-events:none;transition:transform 820ms cubic-bezier(.18,.82,.18,1),opacity 820ms ease,border-color 620ms ease,box-shadow 820ms ease;}
 
 .desktop-area{width:100%;height:100%;box-sizing:border-box;padding:24px;display:flex;flex-direction:column;justify-content:flex-start;align-items:flex-start;position:relative;}
 .desktop-area > *:not(.taskbar){background:transparent!important;}
@@ -85,7 +95,7 @@ html, body { margin:0; padding:0; height:100%; background:#000!important;}
 .start-menu input[type="checkbox"]{width:16px;height:16px;accent-color:#6ea0ff;}
 @media(max-width:768px){.main-window{width:100vw;height:100vh;}}
 /* ==== Agents ==== */
-#agentsWindow, #alphaWindow, #satoshiWindow {
+#agentsWindow, #alphaWindow, #satoshiWindow, #roomWindow {
   width: 80%;
   height: 80%;
   max-width: 1600px;
@@ -102,7 +112,7 @@ html, body { margin:0; padding:0; height:100%; background:#000!important;}
   z-index: 100;
 }
 
-#agentsWindow .content, #alphaWindow .content, #satoshiWindow .content {
+#agentsWindow .content, #alphaWindow .content, #satoshiWindow .content, #roomWindow .content {
   position: absolute;
   top: 32px;
   left: 0;
@@ -114,7 +124,7 @@ html, body { margin:0; padding:0; height:100%; background:#000!important;}
   overflow: hidden;
 }
 
-#agentsWindow iframe, #alphaWindow iframe, #satoshiWindow iframe {
+#agentsWindow iframe, #alphaWindow iframe, #satoshiWindow iframe, #roomWindow iframe {
   position: absolute;
   top: 0;
   left: 0;
@@ -127,7 +137,7 @@ html, body { margin:0; padding:0; height:100%; background:#000!important;}
 
 :root{--scale:1;--taskbar-height:48px}
 /* === KEVA mobile layout unify (injected) === */
-#readmeWindow, #downloadWindow, #agentsWindow, #alphaWindow, #satoshiWindow {
+#readmeWindow, #downloadWindow, #agentsWindow, #alphaWindow, #satoshiWindow, #roomWindow {
   width: 80% !important;
   height: 80% !important;
   max-width: 1600px !important;
@@ -140,7 +150,7 @@ html, body { margin:0; padding:0; height:100%; background:#000!important;}
   background: #000 !important;
   display: none;
 }
-#readmeWindow .content, #downloadWindow .content, #agentsWindow .content, #alphaWindow .content, #satoshiWindow .content {
+#readmeWindow .content, #downloadWindow .content, #agentsWindow .content, #alphaWindow .content, #satoshiWindow .content, #roomWindow .content {
   position: absolute !important;
   top: 32px !important;
   left: 0 !important; right: 0 !important;
@@ -150,10 +160,47 @@ html, body { margin:0; padding:0; height:100%; background:#000!important;}
   background: #000;
   color: #cfffff;
 }
-#agentsWindow .content, #alphaWindow .content, #satoshiWindow .content, #readmeWindow .content { padding: 0; overflow: hidden; } /* iframe 全铺 */
-#agentsWindow iframe, #alphaWindow iframe, #satoshiWindow iframe, #readmeWindow iframe { width: 100%; height: 100%; border: 0; display: block; background: #000; }
+#agentsWindow .content, #alphaWindow .content, #satoshiWindow .content, #roomWindow .content, #readmeWindow .content { padding: 0; overflow: hidden; } /* iframe 全铺 */
+#agentsWindow iframe, #alphaWindow iframe, #satoshiWindow iframe, #roomWindow iframe, #readmeWindow iframe { width: 100%; height: 100%; border: 0; display: block; background: #000; }
 @media (max-width: 768px) {
-  #readmeWindow, #downloadWindow, #agentsWindow, #alphaWindow, #satoshiWindow { width: 95% !important; height: 85% !important; }
+  #readmeWindow, #downloadWindow, #agentsWindow, #alphaWindow, #satoshiWindow, #roomWindow { width: 95% !important; height: 85% !important; }
+}
+
+#roomWindow {
+  width: 100% !important;
+  height: 100% !important;
+  max-width: none !important;
+  max-height: none !important;
+  left: 0 !important;
+  top: 0 !important;
+  transform: none !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  background: #000 !important;
+  z-index: 500 !important;
+}
+
+#roomWindow .title-bar {
+  display: none !important;
+}
+
+#roomWindow .content {
+  top: 0 !important;
+  height: 100% !important;
+}
+
+#roomFrame {
+  pointer-events: none;
+}
+
+.room-touch-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  background: transparent;
+  touch-action: none;
+  cursor: crosshair;
 }
 
 #settingsWindow {
@@ -196,15 +243,24 @@ html, body { margin:0; padding:0; height:100%; background:#000!important;}
     color: #fff;
   }
 
-  .custom-link-form {
+  .custom-link-form,
+  .node-custom-form {
     display: flex;
     gap: 8px;
     flex-wrap: wrap;
     margin-bottom: 8px;
   }
 
+  .node-custom-form {
+    flex-wrap: wrap;
+    align-items: center;
+    margin: 6px 0 0;
+  }
+
   .custom-link-form input[type="text"],
-  .custom-link-form input[type="url"] {
+  .custom-link-form input[type="url"],
+  .node-custom-form input,
+  .node-custom-form select {
     flex: 1 1 200px;
     background: #0d0d0d;
     border: 1px solid #333;
@@ -213,7 +269,12 @@ html, body { margin:0; padding:0; height:100%; background:#000!important;}
     border-radius: 4px;
   }
 
-  .custom-link-form button {
+  .node-custom-form #nodeHostInput { flex: 1 1 160px; min-width: 0; }
+  .node-custom-form #nodePortInput { flex: 0 1 76px; min-width: 0; }
+  .node-custom-form #nodeProtocolInput { flex: 0 1 72px; min-width: 0; }
+
+  .custom-link-form button,
+  .node-custom-form button {
     padding: 6px 12px;
     background: #3a8ff7;
     color: #fff;
@@ -222,7 +283,8 @@ html, body { margin:0; padding:0; height:100%; background:#000!important;}
     cursor: pointer;
   }
 
-  .custom-links-list {
+  .custom-links-list,
+  .node-custom-list {
     display: flex;
     flex-direction: column;
     gap: 6px;
@@ -230,7 +292,7 @@ html, body { margin:0; padding:0; height:100%; background:#000!important;}
 
   .custom-link-row {
     display: grid;
-    grid-template-columns: auto 1fr auto;
+    grid-template-columns: auto minmax(0, 1fr) auto;
     gap: 8px;
     align-items: center;
     padding: 6px 8px;
@@ -277,20 +339,27 @@ html, body { margin:0; padding:0; height:100%; background:#000!important;}
 
 #nodeWindow {
   width: min(92vw, 720px);
-  height: min(70vh, calc(100vh - 100px));
-  min-height: 320px;
+  height: auto;
+  max-height: calc(100vh - 44px);
+  min-height: 0;
   left: 50%;
-  top: 55px;
+  top: 20px;
   transform: translate(-50%, 0);
 }
 
 #nodeWindow .content {
-  padding: 14px;
+  padding: 10px 12px 12px;
   font-family: system-ui, sans-serif;
   color: #cfffff;
   background: radial-gradient(circle at 30% 0%, rgba(0, 230, 255, 0.10), transparent 32%), #03080d;
-  height: calc(100% - 44px);
+  height: auto;
+  max-height: calc(100vh - 88px);
   overflow: auto;
+}
+
+
+#nodeRefresh {
+  display: none;
 }
 
 #nodeWindow, #downloadWindow, #settingsWindow {
@@ -377,50 +446,159 @@ html, body { margin:0; padding:0; height:100%; background:#000!important;}
 #settingsWindow .language-form button { grid-column: 1 / -1; margin-top: 2px; padding: 7px 14px; border: 1px solid #00e5ff; border-radius: 4px; background: #06222c; color: #d8ffff; font-family: inherit; text-align: center; }
 
 #nodeCurrent {
-  margin-bottom: 10px;
+  margin-bottom: 6px;
   font-size: 14px;
   color: #eaffff;
 }
 
+.node-current-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.node-current-services {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+  margin: 0 0 8px;
+  padding: 6px;
+  border: 1px solid rgba(0, 229, 255, 0.18);
+  border-radius: 8px;
+  background: rgba(2, 18, 28, 0.62);
+}
+
+.node-current-service-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 6px;
+  color: #bdefff;
+  font-size: 11px;
+  line-height: 14px;
+}
+
 .node-list {
   display: grid;
-  row-gap: 8px;
+  row-gap: 6px;
+}
+
+.node-section {
+  display: grid;
+  row-gap: 6px;
+  margin-top: 8px;
+}
+
+.node-section-title {
+  color: #9ffcff;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.node-custom-section {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(0, 229, 255, 0.20);
+}
+
+.node-empty {
+  color: #83cbd1;
+  font-size: 12px;
+  padding: 7px 8px;
+  border: 1px dashed rgba(0, 229, 255, 0.20);
+  border-radius: 8px;
 }
 
 .node-row {
   display: grid;
-  grid-template-columns: auto 1fr auto;
-  gap: 8px;
-  align-items: center;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 6px;
+  align-items: stretch;
   background: rgba(2, 18, 28, 0.86);
   border: 1px solid rgba(0, 229, 255, 0.22);
   border-radius: 8px;
-  padding: 8px;
+  padding: 6px 8px;
+}
+
+
+.node-host {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.node-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.node-action {
+  padding-left: 8px;
+  padding-right: 8px;
+  white-space: nowrap;
+}
+
+.node-status-cluster {
+  display: grid;
+  grid-template-columns: repeat(3, 16px);
+  grid-template-rows: 20px 16px;
+  column-gap: 4px;
+  row-gap: 2px;
+  align-items: center;
+  justify-items: center;
+  min-width: 56px;
+}
+
+.node-light {
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.node-light-label {
+  color: #83cbd1;
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: .02em;
+  line-height: 16px;
 }
 
 .node-meta {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
+  display: grid;
+  grid-template-rows: 20px 16px;
+  row-gap: 2px;
+  align-items: center;
 }
 
 .node-host {
   font-size: 14px;
+  line-height: 20px;
   color: #eaffff;
 }
 
 .node-height {
   font-size: 12px;
+  line-height: 16px;
   color: #83cbd1;
 }
 
-.node-action, #nodeRefresh, .custom-link-form button {
+.node-action, #nodeRefresh, #nodeRefreshTop, .custom-link-form button, .node-custom-form button {
   border: 1px solid rgba(0, 229, 255, 0.48);
   background: linear-gradient(180deg, rgba(0, 229, 255, 0.18), rgba(0, 109, 133, 0.22));
   color: #eaffff;
   padding: 5px 10px;
   border-radius: 6px;
   cursor: pointer;
+}
+
+.node-actions {
+  display: flex;
+  gap: 4px;
+  align-items: center;
 }
 
 .node-action[disabled] {
@@ -430,6 +608,12 @@ html, body { margin:0; padding:0; height:100%; background:#000!important;}
 
 #nodeRefresh {
   margin-top: 10px;
+}
+
+#nodeRefreshTop {
+  margin: 0;
+  padding: 4px 8px;
+  font-size: 12px;
 }
 
 
@@ -496,6 +680,7 @@ window.addEventListener('load', updateDesktopScale);
         <div class="icon" data-app="chat"><img src="theme/retro/icons/chat.png"/><span>Chat</span></div>
         <div class="icon" data-app="message"><img src="theme/retro/icons/gm.png"/><span>Message</span></div>
         <div class="icon" data-app="story"><img src="theme/retro/icons/story.png"/><span>Story</span></div>
+        <div class="icon" data-app="room"><img src="theme/retro/icons/room.png"/><span>Room</span></div>
       <div class="icon" data-app="getagents"><img src="theme/retro/icons/getagents.gif"/><span>Get ID</span></div>
         <div class="icon" data-app="id"><img src="theme/retro/icons/id.png"/><span>Agent ID</span></div>
       <div class="icon" data-app="alpha"><img src="theme/retro/icons/alpha.png"/><span>Alpha</span></div>
@@ -563,6 +748,14 @@ window.addEventListener('load', updateDesktopScale);
   </div>
 </div>
 
+<div class="notepad-window" id="roomWindow">
+  <div class="title-bar"><span>Room</span><button class="close-btn">×</button></div>
+  <div class="content" style="padding:0;">
+    <iframe id="roomFrame" src="room/index.html?v=room-entry-staticclass&satoshi=required&entry=pullback" style="width:100%;height:100%;border:0;"></iframe>
+    <div id="roomTouchLayer" class="room-touch-layer" aria-label="Room controls"></div>
+  </div>
+</div>
+
 <div class="notepad-window" id="settingsWindow">
   <div class="title-bar"><span>Setting</span><button class="close-btn">×</button></div>
     <div class="content">
@@ -586,6 +779,7 @@ window.addEventListener('load', updateDesktopScale);
           <label><input type="checkbox" data-app="chat" data-visibility-toggle checked> Chat</label>
           <label><input type="checkbox" data-app="message" data-visibility-toggle checked> Message</label>
           <label><input type="checkbox" data-app="story" data-visibility-toggle checked> Story</label>
+          <label><input type="checkbox" data-app="room" data-visibility-toggle checked> Room</label>
           <label><input type="checkbox" data-app="getagents" data-visibility-toggle checked> Get ID</label>
           <label><input type="checkbox" data-app="id" data-visibility-toggle checked> Agent ID</label>
           <label><input type="checkbox" data-app="alpha" data-visibility-toggle> Alpha</label>
@@ -618,8 +812,25 @@ window.addEventListener('load', updateDesktopScale);
 <div class="notepad-window" id="nodeWindow">
   <div class="title-bar"><span>Node</span><button class="close-btn">×</button></div>
   <div class="content">
-    <div id="nodeCurrent">Current: -</div>
-    <div id="nodeList" class="node-list"></div>
+    <div class="node-current-header">
+      <div id="nodeCurrent">Current: -</div>
+      <button id="nodeRefreshTop" type="button">Refresh</button>
+    </div>
+    <div id="nodeCurrentServices" class="node-current-services"></div>
+    <section class="node-section node-official-section" aria-label="Built-in nodes">
+      <div class="node-section-title">Built-in nodes</div>
+      <div id="nodeOfficialList" class="node-list"></div>
+    </section>
+    <section class="node-section node-custom-section" aria-label="Custom nodes">
+      <div class="node-section-title">Custom nodes</div>
+      <form id="nodeCustomForm" class="node-custom-form">
+        <input id="nodeHostInput" type="text" placeholder="Node IP / host" value="192.168.1.215" required>
+        <input id="nodePortInput" type="number" inputmode="numeric" placeholder="Port" value="50001" required>
+        <select id="nodeProtocolInput" aria-label="Protocol"><option value="tcp">TCP</option><option value="ssl">SSL</option></select>
+        <button type="submit">Add</button>
+      </form>
+      <div id="nodeCustomList" class="node-list"></div>
+    </section>
     <button id="nodeRefresh" type="button">Refresh</button>
   </div>
 </div>
@@ -633,6 +844,7 @@ window.addEventListener('load', updateDesktopScale);
         <label><input type="checkbox" data-app="chat" data-visibility-toggle checked> Chat</label>
         <label><input type="checkbox" data-app="message" data-visibility-toggle checked> Message</label>
         <label><input type="checkbox" data-app="story" data-visibility-toggle checked> Story</label>
+        <label><input type="checkbox" data-app="room" data-visibility-toggle checked> Room</label>
         <label><input type="checkbox" data-app="getagents" data-visibility-toggle checked> Get ID</label>
         <label><input type="checkbox" data-app="id" data-visibility-toggle checked> Agent ID</label>
         <label><input type="checkbox" data-app="alpha" data-visibility-toggle> Alpha</label>
@@ -673,18 +885,229 @@ document.querySelectorAll('.notepad-window .close-btn').forEach(btn=>{
 });
 
   const desktopIcons=document.getElementById('icons');
-  const nodeState={current:null,nodes:[],resultById:{}};
+  const nodeState={current:null,nodes:[],resultById:{},services:{satoshi:null,xkeva:null,perNode:{}}};
+
+  function closeRoomWindow(){
+    const roomWindow=document.getElementById('roomWindow');
+    if(roomWindow)roomWindow.style.display='none';
+  }
+
+  function postRoomMessage(payload){
+    const roomFrame=document.getElementById('roomFrame');
+    if(!roomFrame || !roomFrame.contentWindow)return;
+    try{roomFrame.contentWindow.postMessage(payload,'*');}catch(_){}
+  }
+
+  function resetRoomFrame(){
+    postRoomMessage({type:'room_reset'});
+  }
+
+  function postRoomPointer(type,event){
+    const roomFrame=document.getElementById('roomFrame');
+    if(!roomFrame || !roomFrame.contentWindow)return;
+    const rect=roomFrame.getBoundingClientRect();
+    postRoomMessage({
+      type,
+      clientX:event.clientX-rect.left,
+      clientY:event.clientY-rect.top
+    });
+  }
+
+  function bindRoomTouchLayer(){
+    const layer=document.getElementById('roomTouchLayer');
+    if(!layer || layer._roomTouchBound)return;
+    layer._roomTouchBound=true;
+    let activePointerId=null;
+    let mouseActive=false;
+
+    layer.addEventListener('pointerdown',event=>{
+      event.preventDefault();
+      activePointerId=event.pointerId;
+      try{layer.setPointerCapture(event.pointerId);}catch(_){}
+      postRoomPointer('room_pointer_down',event);
+    });
+
+    layer.addEventListener('pointermove',event=>{
+      if(activePointerId!==null && event.pointerId!==activePointerId)return;
+      event.preventDefault();
+      postRoomPointer('room_pointer_move',event);
+    });
+
+    const endPointer=event=>{
+      if(activePointerId!==null && event.pointerId!==activePointerId)return;
+      event.preventDefault();
+      postRoomPointer(event.type==='pointercancel' ? 'room_pointer_cancel' : 'room_pointer_up',event);
+      try{layer.releasePointerCapture(event.pointerId);}catch(_){}
+      activePointerId=null;
+    };
+
+    layer.addEventListener('pointerup',endPointer);
+    layer.addEventListener('pointercancel',endPointer);
+
+    layer.addEventListener('mousedown',event=>{
+      event.preventDefault();
+      mouseActive=true;
+      postRoomPointer('room_pointer_down',event);
+    });
+
+    layer.addEventListener('click',event=>{
+      event.preventDefault();
+      postRoomPointer('room_pointer_down',event);
+    });
+
+    layer.addEventListener('mousemove',event=>{
+      if(!mouseActive)return;
+      event.preventDefault();
+      postRoomPointer('room_pointer_move',event);
+    });
+
+    window.addEventListener('mouseup',event=>{
+      if(!mouseActive)return;
+      event.preventDefault();
+      postRoomPointer('room_pointer_up',event);
+      mouseActive=false;
+    });
+
+    layer.addEventListener('touchstart',event=>{
+      const touch=event.touches && event.touches[0];
+      if(!touch)return;
+      event.preventDefault();
+      postRoomPointer('room_pointer_down',touch);
+    },{passive:false});
+
+    layer.addEventListener('touchmove',event=>{
+      const touch=event.touches && event.touches[0];
+      if(!touch)return;
+      event.preventDefault();
+      postRoomPointer('room_pointer_move',touch);
+    },{passive:false});
+
+    layer.addEventListener('touchend',event=>{
+      const touch=(event.changedTouches && event.changedTouches[0]) || (event.touches && event.touches[0]);
+      if(!touch)return;
+      event.preventDefault();
+      postRoomPointer('room_pointer_up',touch);
+    },{passive:false});
+
+    layer.addEventListener('touchcancel',event=>{
+      const touch=(event.changedTouches && event.changedTouches[0]) || (event.touches && event.touches[0]);
+      if(!touch)return;
+      event.preventDefault();
+      postRoomPointer('room_pointer_cancel',touch);
+    },{passive:false});
+  }
+
+  bindRoomTouchLayer();
+
+  const roomFrame=document.getElementById('roomFrame');
+  if(roomFrame){
+    roomFrame.addEventListener('load',()=>{
+      const roomWindow=document.getElementById('roomWindow');
+      if(roomWindow && roomWindow.style.display==='block')setTimeout(resetRoomFrame,40);
+    });
+  }
+
+  function showRoomWindow(pushHistory){
+    const roomWindow=document.getElementById('roomWindow');
+    const roomFrame=document.getElementById('roomFrame');
+    if(!roomWindow || !roomFrame)return;
+    roomWindow.style.display='block';
+    if(pushHistory)try{history.pushState({app:'room'},'', '#room');}catch(_){}
+    setTimeout(()=>{
+      resetRoomFrame();
+      try{roomFrame.contentWindow.focus();}catch(_){}
+      try{
+        const canvas=roomFrame.contentWindow.document.getElementById('roomCanvas');
+        if(canvas)canvas.focus();
+      }catch(_){}
+    },60);
+    setTimeout(resetRoomFrame,220);
+  }
+
+  if(location.hash==='#room'){
+    setTimeout(startRoomShrinkTransition,80);
+  }
+
+  window.addEventListener('popstate',()=>{
+    const roomWindow=document.getElementById('roomWindow');
+    if(roomWindow && roomWindow.style.display==='block'){
+      closeRoomWindow();
+    }
+  });
 
   function postToNative(payload){
-    if(window.ReactNativeWebView && typeof window.ReactNativeWebView.postMessage==='function'){
-      window.ReactNativeWebView.postMessage(JSON.stringify(payload));
+    let bridge=null;
+    try{
+      bridge=window.ReactNativeWebView || (window.parent && window.parent!==window ? window.parent.ReactNativeWebView : null);
+    }catch(_){
+      bridge=window.ReactNativeWebView || null;
+    }
+    if(bridge && typeof bridge.postMessage==='function'){
+      bridge.postMessage(JSON.stringify(payload));
     }
   }
 
   function postNativeMessage(message){
-    if(window.ReactNativeWebView && typeof window.ReactNativeWebView.postMessage==='function'){
-      window.ReactNativeWebView.postMessage(message);
+    let bridge=null;
+    try{
+      bridge=window.ReactNativeWebView || (window.parent && window.parent!==window ? window.parent.ReactNativeWebView : null);
+    }catch(_){
+      bridge=window.ReactNativeWebView || null;
     }
+    if(bridge && typeof bridge.postMessage==='function'){
+      bridge.postMessage(message);
+    }
+  }
+
+  const ROOM_TARGET_URL='room/index.html?v=room-entry-staticclass&satoshi=required';
+  let roomShrinkTransitioning=false;
+
+  function roomMonitorViewportRect(){
+    const viewportW=Math.max(1,window.innerWidth || document.documentElement.clientWidth || 1);
+    const viewportH=Math.max(1,window.innerHeight || document.documentElement.clientHeight || 1);
+    const canvasW=Math.max(viewportW,viewportH*4/3);
+    const canvasH=Math.max(viewportH,viewportW*3/4);
+    const canvasLeft=(viewportW-canvasW)/2;
+    const canvasTop=(viewportH-canvasH)/2;
+    const cameraX=1032-640/2;
+    const monitor={x:901,y:132,w:260,h:118};
+    return {
+      left:canvasLeft+((monitor.x-cameraX)/640)*canvasW,
+      top:canvasTop+(monitor.y/480)*canvasH,
+      width:(monitor.w/640)*canvasW,
+      height:(monitor.h/480)*canvasH
+    };
+  }
+
+  function startRoomShrinkTransition(){
+    if(roomShrinkTransitioning)return;
+    roomShrinkTransitioning=true;
+    document.body.classList.add('room-launching');
+    try{ if(document.activeElement && typeof document.activeElement.blur==='function')document.activeElement.blur(); }catch(_){}
+    try{ document.querySelectorAll('.icon').forEach(el=>{el.style.background='transparent';el.style.boxShadow='none';el.style.outline='0';}); }catch(_){}
+    try{
+      if(window.parent && window.parent!==window && typeof window.parent.closeEmbeddedHomeToRoom==='function'){
+        window.parent.closeEmbeddedHomeToRoom();
+        setTimeout(()=>{roomShrinkTransitioning=false;},1100);
+        return;
+      }
+      if(window.parent && window.parent!==window && typeof window.parent.enterRoomFromEmbeddedHome==='function'){
+        window.parent.enterRoomFromEmbeddedHome();
+        setTimeout(()=>{roomShrinkTransitioning=false;},1100);
+        return;
+      }
+    }catch(_){}
+    try{
+      if(window.parent && window.parent!==window && typeof window.parent.postMessage==='function'){
+        window.parent.postMessage({type:'embedded_home_room'},'*');
+        setTimeout(()=>{roomShrinkTransitioning=false;},1100);
+        return;
+      }
+    }catch(_){}
+    document.body.classList.add('room-screen-close');
+    requestAnimationFrame(()=>{document.body.classList.add('room-screen-close-active');});
+    setTimeout(()=>{document.body.classList.add('room-screen-line-hidden');},420);
+    setTimeout(()=>{window.location.href=ROOM_TARGET_URL;},920);
   }
 
   function nodeAddress(node){
@@ -692,56 +1115,152 @@ document.querySelectorAll('.notepad-window .close-btn').forEach(btn=>{
     return `${node && node.host ? node.host : ''}${port ? ':'+port : ''}`;
   }
 
+  function currentNodeFromList(){
+    const current=nodeState.current || {};
+    return nodeState.nodes.find(node=>node && current.host===node.host && String(current.ssl || '')===String(node.ssl || '') && String(current.tcp || '')===String(node.tcp || '')) || current;
+  }
+
+  function serviceForNode(node, name){
+    if(!node || !name)return null;
+    const byId=nodeState.services && nodeState.services.perNode ? nodeState.services.perNode : {};
+    if(node.id && byId[node.id] && byId[node.id][name])return byId[node.id][name];
+    const nodeKey=`${node.host || ''}:${node.ssl || node.tcp || ''}:${node.ssl ? 'ssl' : 'tcp'}`;
+    return Object.keys(byId).map(id=>byId[id]).find(entry=>entry && entry.nodeKey===nodeKey)?.[name] || null;
+  }
+
+  function serviceLightForNode(node, name){
+    if(!node)return '🟨';
+    const service=serviceForNode(node,name);
+    if(service == null)return '🟨';
+    if(service.ok === true)return '🟩';
+    if(service.ok === false)return '🟥';
+    return '🟨';
+  }
+
+  function nodeProtocolLabel(node){
+    return node && node.ssl ? 'SSL' : 'TCP';
+  }
+
+  function renderCurrentNodeServices(){
+    const box=document.getElementById('nodeCurrentServices');
+    if(!box)return;
+    const currentNode=currentNodeFromList();
+    const result=currentNode && currentNode.id ? nodeState.resultById[currentNode.id] : null;
+    const electrumLight=result && result.ok ? '🟩' : '🟥';
+    const satoshiLight=serviceLightForNode(currentNode,'satoshi');
+    const modelLight=serviceLightForNode(currentNode,'xkeva');
+    const rows=[['ElectrumX',electrumLight],['Satoshi',satoshiLight],['Model',modelLight]];
+    box.innerHTML=rows.map(([label,light])=>`<div class="node-current-service-row"><span class="node-light">${light}</span><span>${label}</span></div>`).join('');
+  }
+
+  function renderNodeRow(node, current){
+    const result=nodeState.resultById[node.id];
+    const status=result && result.ok ? '🟩' : '🟥';
+    const satoshiService=serviceForNode(node,'satoshi');
+    const modelService=serviceForNode(node,'xkeva');
+    const satoshiStatus=serviceLightForNode(node,'satoshi');
+    const modelStatus=serviceLightForNode(node,'xkeva');
+    const satoshiTitle=satoshiService && satoshiService.ok === false
+      ? `Satoshi API unavailable: ${satoshiService.message || satoshiService.status || 'unknown'}`
+      : 'Satoshi API';
+    const modelTitle=modelService && modelService.ok === false
+      ? `Model API unavailable: ${modelService.message || modelService.status || 'unknown'}`
+      : 'Model API';
+    const heightText=result && result.ok && Number.isFinite(result.height) ? `#${result.height}` : '-';
+    const isUsing=current.host===node.host && String(current.ssl || '')===String(node.ssl || '') && String(current.tcp || '')===String(node.tcp || '');
+    const row=document.createElement('div');
+    row.className='node-row';
+    row.innerHTML=`
+      <div class="node-status-cluster" aria-label="ElectrumX Satoshi Model status">
+        <span class="node-light" title="ElectrumX">${status}</span>
+        <span class="node-light" title="${satoshiTitle}">${satoshiStatus}</span>
+        <span class="node-light" title="${modelTitle}">${modelStatus}</span>
+        <span class="node-light-label">E</span>
+        <span class="node-light-label">S</span>
+        <span class="node-light-label">M</span>
+      </div>
+      <div class="node-meta">
+        <div class="node-host">${nodeAddress(node)} (${nodeProtocolLabel(node)})</div>
+        <div class="node-height">${window.HomeI18n ? HomeI18n.t('ui.nodeHeight',{height:heightText}) : `height: ${heightText}`}</div>
+      </div>
+      <div class="node-actions">
+        <button class="node-action node-use-action" data-node-id="${node.id}" ${isUsing ? 'disabled' : ''}>${window.HomeI18n ? HomeI18n.t(isUsing ? 'ui.nodeUsing' : 'ui.nodeUse') : (isUsing ? 'Using' : 'Use')}</button>
+        ${node.custom ? `<button class="node-action node-remove-action" data-node-id="${node.id}">×</button>` : ''}
+      </div>
+    `;
+    row.querySelector('.node-use-action').addEventListener('click',()=>{
+      postToNative({type:'electrum_use',id:node.id,host:node.host,ssl:node.ssl || '',tcp:node.tcp || ''});
+    });
+    const removeBtn=row.querySelector('.node-remove-action');
+    if(removeBtn)removeBtn.addEventListener('click',()=>{
+      postToNative({type:'electrum_remove_custom_node',id:node.id,host:node.host,ssl:node.ssl || '',tcp:node.tcp || ''});
+    });
+    return row;
+  }
+
   function renderNodeWindow(){
     const current=nodeState.current || {};
     const currentText=nodeAddress(current) || '-';
     document.getElementById('nodeCurrent').textContent=window.HomeI18n ? HomeI18n.t('ui.nodeCurrent',{address:currentText}) : `Current: ${currentText}`;
+    renderCurrentNodeServices();
 
-    const list=document.getElementById('nodeList');
-    list.innerHTML='';
+    const officialList=document.getElementById('nodeOfficialList');
+    const customList=document.getElementById('nodeCustomList');
+    if(!officialList || !customList)return;
+    officialList.innerHTML='';
+    customList.innerHTML='';
 
-    nodeState.nodes.forEach(node=>{
-      const result=nodeState.resultById[node.id];
-      const status=result ? (result.ok ? '🟩' : '🟥') : '⬛';
-      const heightText=result && result.ok && Number.isFinite(result.height) ? `#${result.height}` : '-';
-      const isUsing=current.host===node.host && String(current.ssl || '')===String(node.ssl || '') && String(current.tcp || '')===String(node.tcp || '');
-      const row=document.createElement('div');
-      row.className='node-row';
-      row.innerHTML=`
-        <div>${status}</div>
-        <div class="node-meta">
-          <div class="node-host">${nodeAddress(node)} (SSL)</div>
-          <div class="node-height">${window.HomeI18n ? HomeI18n.t('ui.nodeHeight',{height:heightText}) : `height: ${heightText}`}</div>
-        </div>
-        <button class="node-action" data-node-id="${node.id}" ${isUsing ? 'disabled' : ''}>${window.HomeI18n ? HomeI18n.t(isUsing ? 'ui.nodeUsing' : 'ui.nodeUse') : (isUsing ? 'Using' : 'Use')}</button>
-      `;
-      row.querySelector('button').addEventListener('click',()=>{
-        postToNative({type:'electrum_use',id:node.id});
-      });
-      list.appendChild(row);
-    });
+    const officialNodes=nodeState.nodes.filter(node=>node && !node.custom);
+    const customNodes=nodeState.nodes.filter(node=>node && node.custom);
+
+    officialNodes.forEach(node=>officialList.appendChild(renderNodeRow(node,current)));
+    customNodes.forEach(node=>customList.appendChild(renderNodeRow(node,current)));
+
+    if(!customNodes.length){
+      const empty=document.createElement('div');
+      empty.className='node-empty';
+      empty.textContent='No custom nodes yet.';
+      customList.appendChild(empty);
+    }
   }
 
   function openNodeWindow(){
     document.getElementById('nodeWindow').style.display='block';
     postToNative({type:'electrum_get_state'});
+    postToNative({type:'node_services_get_status'});
   }
 
-  document.getElementById('nodeRefresh').addEventListener('click',()=>{
+  function refreshNodeStatuses(){
     postToNative({type:'electrum_probe_get_or_run'});
+    postToNative({type:'node_services_get_status'});
+  }
+
+  document.getElementById('nodeRefresh').addEventListener('click',refreshNodeStatuses);
+  document.getElementById('nodeRefreshTop').addEventListener('click',refreshNodeStatuses);
+
+  const nodeCustomForm=document.getElementById('nodeCustomForm');
+  if(nodeCustomForm)nodeCustomForm.addEventListener('submit',event=>{
+    event.preventDefault();
+    const host=document.getElementById('nodeHostInput').value.trim();
+    const port=document.getElementById('nodePortInput').value.trim();
+    const protocol=document.getElementById('nodeProtocolInput').value === 'ssl' ? 'ssl' : 'tcp';
+    if(!host || !port)return;
+    postToNative({type:'electrum_add_custom_node',host,port,protocol});
   });
 
   function updateRefreshCooldown(leftSec){
-    const btn=document.getElementById('nodeRefresh');
-    if(!btn)return;
+    const buttons=[document.getElementById('nodeRefresh'),document.getElementById('nodeRefreshTop')].filter(Boolean);
+    if(!buttons.length)return;
     const s=Number(leftSec || 0);
-    if(s>0){
-      btn.disabled=true;
-      btn.textContent=window.HomeI18n ? HomeI18n.t('ui.nodeRefreshCooldown',{seconds:s}) : `Refresh (${s}s)`;
-    }else{
-      btn.disabled=false;
-      btn.textContent=window.HomeI18n ? HomeI18n.t('ui.nodeRefresh') : 'Refresh';
-    }
+    buttons.forEach(btn=>{
+      if(s>0){
+        btn.disabled=true;
+        btn.textContent=window.HomeI18n ? HomeI18n.t('ui.nodeRefreshCooldown',{seconds:s}) : `Refresh (${s}s)`;
+      }else{
+        btn.disabled=false;
+        btn.textContent=window.HomeI18n ? HomeI18n.t('ui.nodeRefresh') : 'Refresh';
+      }
+    });
   }
 
   let cooldownTimer=null;
@@ -873,7 +1392,11 @@ document.querySelectorAll('.notepad-window .close-btn').forEach(btn=>{
   function handleSatoshiAction(action){
     if(action==='get'){
       if(latestSatoshiStatus && latestSatoshiStatus.hasSatoshi){
-        postNativeMessage('open_satoshi_namespace_list');
+        if(window.ReactNativeWebView && typeof window.ReactNativeWebView.postMessage==='function'){
+          postNativeMessage('open_room');
+        }else{
+          startRoomShrinkTransition();
+        }
         return;
       }
       if(latestSatoshiStatus && isSatoshiBusyStatus(latestSatoshiStatus.status)){
@@ -948,6 +1471,16 @@ document.querySelectorAll('.notepad-window .close-btn').forEach(btn=>{
       nodeState.nodes=Array.isArray(payload.nodes) ? payload.nodes : [];
       renderNodeWindow();
       postToNative({type:'electrum_probe_get_or_run'});
+      return;
+    }
+
+    if(payload.type==='node_services_status'){
+      nodeState.services={
+        satoshi: payload.satoshi || null,
+        xkeva: payload.xkeva || null,
+        perNode: payload.perNode || {},
+      };
+      renderNodeWindow();
       return;
     }
 
@@ -1034,6 +1567,10 @@ document.querySelectorAll('.notepad-window .close-btn').forEach(btn=>{
       } else {
         alert(window.HomeI18n ? HomeI18n.t('alerts.storyShortcutNativeOnly') : 'Story shortcut is only available inside the Kevacoin app.');
       }
+      return;
+    }
+    if(app==='room'){
+      startRoomShrinkTransition();
       return;
     }
     if(app==='id'){
@@ -1236,6 +1773,10 @@ window.addEventListener('load', () => {
 
     refreshVisibilityBindings();
   })();
+
+  if(new URLSearchParams(window.location.search).get('roomAuto')==='1'){
+    setTimeout(startRoomShrinkTransition,180);
+  }
 
 // === Home language: defaults to English; native HomeScreen pushes current Role language ===
 (function(){

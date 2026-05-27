@@ -35,6 +35,21 @@ export const LLM_PROVIDERS = {
     defaultModel: 'qwen-plus',
     authHeader: apiKey => ({ Authorization: `Bearer ${apiKey}` }),
   },
+  openrouter: {
+    kind: 'openai_compat',
+    baseUrl: 'https://openrouter.ai/api/v1',
+    defaultModel: 'openrouter/auto',
+    authHeader: apiKey => ({ Authorization: `Bearer ${apiKey}` }),
+  },
+  xkeva: {
+    kind: 'openai_compat',
+    baseUrl: 'https://x.xkeva.com/model.php/v1',
+    defaultModel: 'xkeva',
+    fixedModel: true,
+    skipModelFetch: true,
+    noKeyRequired: true,
+    authHeader: apiKey => (apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
+  },
   gemini: {
     kind: 'gemini',
     baseUrl: 'https://generativelanguage.googleapis.com/v1beta',

@@ -1,11 +1,17 @@
 const HmacSHA256 = require('crypto-js/hmac-sha256');
 const Hex = require('crypto-js/enc-hex');
 const BlueApp = require('../BlueApp');
+const AsyncStorageModule = require('@react-native-community/async-storage');
+const AsyncStorage = AsyncStorageModule.default || AsyncStorageModule;
+const { AppStorage } = require('./app-storage');
 const TcpSocketModule = require('react-native-tcp-socket');
 const TcpSocket = TcpSocketModule.default || TcpSocketModule;
 
-// Replace with the real PHP API URL.
-export const NAMESPACE_API_URL = 'https://s.xkeva.com/index.php';
+// Satoshi namespace API follows the currently selected ElectrumX node.
+// Nova serves Satoshi and Model API from the unified PHP dashboard port.
+const DEFAULT_NAMESPACE_API_HOST = '192.168.1.215';
+const NAMESPACE_API_PATH = '/satoshi.php';
+export const NAMESPACE_API_URL = buildNamespaceApiUrl(DEFAULT_NAMESPACE_API_HOST);
 
 // Must match APP_SHARED_SECRET in namespace_api.php.
 // This is only an app anti-abuse secret. Do not treat it as strong security.
@@ -30,6 +36,54 @@ export async function getNamespaceDeviceId() {
   return deviceId;
 }
 
+
+
+function normalizeNamespaceApiHost(hostValue) {
+  const raw = String(hostValue || '').trim();
+  if (!raw || raw === 'undefined' || raw === 'null') return DEFAULT_NAMESPACE_API_HOST;
+  const withoutProtocol = raw.replace(/^https?:\/\//i, '').split('/')[0];
+  const withoutPort = withoutProtocol.replace(/:\d+$/, '').trim();
+  return withoutPort || DEFAULT_NAMESPACE_API_HOST;
+}
+
+function isLocalNamespaceApiHost(host) {
+  return /^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[0-1])\.)/i.test(String(host || ''));
+}
+
+function buildNamespaceApiUrl(hostValue) {
+  const host = normalizeNamespaceApiHost(hostValue);
+  const local = isLocalNamespaceApiHost(host);
+  const protocol = local ? 'http' : 'https';
+  const port = local ? ':8787' : '';
+  return `${protocol}://${host}${port}${NAMESPACE_API_PATH}`;
+}
+
+export async function getNamespaceApiUrl() {
+  const selectedHost = await AsyncStorage.getItem(AppStorage.ELECTRUM_HOST);
+  return buildNamespaceApiUrl(selectedHost || DEFAULT_NAMESPACE_API_HOST);
+}
+
+export async function getNamespaceApiUrls() {
+  const primary = await getNamespaceApiUrl();
+  return [primary].filter(Boolean);
+}
+
+async function tryNamespaceApiUrls(operation, label) {
+  const urls = await getNamespaceApiUrls();
+  let lastError = null;
+  for (const namespaceApiUrl of urls) {
+    try {
+      return await operation(namespaceApiUrl);
+    } catch (error) {
+      lastError = error;
+      if (error?.namespaceApiApplicationError) {
+        throw error;
+      }
+      console.warn(`Namespace API ${label || 'request'} failed for ${namespaceApiUrl}`, error);
+    }
+  }
+  throw lastError || new Error('Namespace API request failed');
+}
 
 function parseHttpUrl(url) {
   const match = String(url || '').match(/^http:\/\/([^\/:?#]+)(?::(\d+))?([^?#]*)(\?[^#]*)?/);
@@ -121,7 +175,11 @@ async function readJsonResponse(response) {
     throw new Error(`Namespace API returned non-JSON response: ${text.slice(0, 160)}`);
   }
   if (!response.ok || json.ok === false) {
-    throw new Error(json.message || json.status || `Namespace API error: ${response.status}`);
+    const error = new Error(json.message || json.status || `Namespace API error: ${response.status}`);
+    error.namespaceApiStatus = json.status || '';
+    error.namespaceApiHttpStatus = response.status;
+    error.namespaceApiApplicationError = !!json.status && !['not_found', 'server_error'].includes(String(json.status));
+    throw error;
   }
   return json;
 }
@@ -129,56 +187,62 @@ async function readJsonResponse(response) {
 export async function requestServerNamespace(address, appVersion = '1.0.0') {
   const deviceId = await getNamespaceDeviceId();
 
-  const nonceUrl = `${NAMESPACE_API_URL}?action=nonce&device_id=${encodeURIComponent(deviceId)}`;
-  const nonceResponse = await namespaceFetch(nonceUrl, { method: 'GET' });
-  const nonceJson = await readJsonResponse(nonceResponse);
+  return tryNamespaceApiUrls(async namespaceApiUrl => {
+    const nonceUrl = `${namespaceApiUrl}?action=nonce&device_id=${encodeURIComponent(deviceId)}`;
+    const nonceResponse = await namespaceFetch(nonceUrl, { method: 'GET' });
+    const nonceJson = await readJsonResponse(nonceResponse);
 
-  const ts = Math.floor(Date.now() / 1000);
-  const nonce = nonceJson.nonce;
-  const verify = buildVerify(address, deviceId, ts, nonce);
+    const ts = Math.floor(Date.now() / 1000);
+    const nonce = nonceJson.nonce;
+    const verify = buildVerify(address, deviceId, ts, nonce);
 
-  const requestResponse = await namespaceFetch(NAMESPACE_API_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      address,
-      device_id: deviceId,
-      app_version: appVersion,
-      ts,
-      nonce,
-      verify,
-    }),
-  });
-  const result = await readJsonResponse(requestResponse);
+    const requestResponse = await namespaceFetch(namespaceApiUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        address,
+        device_id: deviceId,
+        app_version: appVersion,
+        ts,
+        nonce,
+        verify,
+      }),
+    });
+    const result = await readJsonResponse(requestResponse);
 
-  if (result.status === 'sent' || result.status === 'already_sent') {
-    await BlueApp.setItemStorage(`${LAST_NAMESPACE_RESULT_PREFIX}${address}`, JSON.stringify(result));
-  }
+    if (result.status === 'sent' || result.status === 'already_sent') {
+      await BlueApp.setItemStorage(`${LAST_NAMESPACE_RESULT_PREFIX}${address}`, JSON.stringify(result));
+    }
 
-  return result;
+    return result;
+  }, 'namespace request');
 }
 
 export async function getServerBlockHeight() {
-  const url = `${NAMESPACE_API_URL}?action=block_height`;
-  const response = await namespaceFetch(url, { method: 'GET' });
-  const result = await readJsonResponse(response);
-  const height = Number(result.height || result.block_height || result.blocks || 0);
-  if (!Number.isFinite(height) || height <= 0) {
-    throw new Error('Namespace API returned invalid block height');
-  }
-  return height;
+  return tryNamespaceApiUrls(async namespaceApiUrl => {
+    const url = `${namespaceApiUrl}?action=block_height`;
+    const response = await namespaceFetch(url, { method: 'GET' });
+    const result = await readJsonResponse(response);
+    const height = Number(result.height || result.block_height || result.blocks || 0);
+    if (!Number.isFinite(height) || height <= 0) {
+      throw new Error('Namespace API returned invalid block height');
+    }
+    return height;
+  }, 'block height');
 }
 
 export async function getServerNamespaceStatus(address) {
-  const url = `${NAMESPACE_API_URL}?action=status&address=${encodeURIComponent(address)}`;
-  const response = await namespaceFetch(url, { method: 'GET' });
-  const result = await readJsonResponse(response);
+  return tryNamespaceApiUrls(async namespaceApiUrl => {
+    const url = `${namespaceApiUrl}?action=status&address=${encodeURIComponent(address)}`;
+    const response = await namespaceFetch(url, { method: 'GET' });
+    const result = await readJsonResponse(response);
 
-  if (result.status === 'sent' || result.status === 'already_sent') {
-    await BlueApp.setItemStorage(`${LAST_NAMESPACE_RESULT_PREFIX}${address}`, JSON.stringify(result));
-  }
+    if (result.status === 'sent' || result.status === 'already_sent') {
+      await BlueApp.setItemStorage(`${LAST_NAMESPACE_RESULT_PREFIX}${address}`, JSON.stringify(result));
+    }
 
-  return result;
+    return result;
+  }, 'namespace status');
 }
 
 export async function getCachedServerNamespaceResult(address) {

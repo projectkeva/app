@@ -135,10 +135,14 @@ class RewardKeyValue extends React.Component {
     const wallet = wallets.find(w => w.getID() == walletId);
 
     const namespaces = namespaceList.namespaces;
-    const items = Object.keys(namespaces).map(ns => ({label: namespaces[ns].displayName, value: namespaces[ns].id}));
+    const items = Object.keys(namespaces).map(ns => ({
+      label: namespaces[ns].displayName,
+      value: namespaces[ns].id,
+      color: '#E5E7EB',
+    }));
     let selectNamespacePage = (
       <View style={styles.modalNS}>
-        <Text style={[styles.modalText, {textAlign: 'center', marginBottom: 20, color: KevaColors.darkText}]}>{"Choose a namespace"}</Text>
+        <Text style={styles.modalTitle}>{"Choose a namespace"}</Text>
         <RNPickerSelect
           value={this.state.namespaceId}
           placeholder={{}}
@@ -146,7 +150,17 @@ class RewardKeyValue extends React.Component {
           style={{
             inputAndroid: styles.inputAndroid,
             inputIOS: styles.inputIOS,
+            inputAndroidContainer: styles.pickerContainer,
+            inputIOSContainer: styles.pickerContainer,
+            viewContainer: styles.pickerViewContainer,
+            placeholder: styles.pickerPlaceholder,
+            iconContainer: styles.pickerIconContainer,
+            modalViewTop: styles.pickerModalView,
+            modalViewMiddle: styles.pickerModalView,
+            modalViewBottom: styles.pickerModalView,
+            modalDoneButtonText: styles.pickerDoneButtonText,
           }}
+          pickerProps={{ dropdownIconColor: '#93C5FD', mode: 'dropdown' }}
           onValueChange={(namespaceId) => this.setState({namespaceId})}
           items={items}
           Icon={() => <Icon name="ios-arrow-down" size={24} color={KevaColors.actionText} style={{ padding: 12 }} />}
@@ -211,7 +225,7 @@ class RewardKeyValue extends React.Component {
             </>
             :
             <>
-              <Text style={[styles.modalText, { alignSelf: 'center', color: KevaColors.darkText }]}>{loc.namespaces.creating_tx}</Text>
+              <Text style={[styles.modalText, { alignSelf: 'center' }]}>{loc.namespaces.creating_tx}</Text>
               <Text style={styles.waitText}>{loc.namespaces.please_wait}</Text>
               <BlueLoading style={{ paddingTop: 30 }} />
             </>
@@ -336,7 +350,9 @@ class RewardKeyValue extends React.Component {
           stepComponents={[selectNamespacePage, createNSPage, confirmPage, broadcastPage]}
           onFinish={this.KeyValueCreationFinish}
           onNext={this.KeyValueCreationNext}
-          onCancel={this.KeyValueCreationCancel} />
+          onCancel={this.KeyValueCreationCancel}
+          modalStyle={styles.stepModal}
+          contentStyle={styles.stepModalContent} />
       </View>
     );
   }
@@ -399,43 +415,68 @@ export default RewardKeyValueScreen = connect(mapStateToProps)(RewardKeyValue);
 var styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: '#050915',
   },
   inputValue1: {
     flexDirection: 'row',
     justifyContent: 'space-around',
-    backgroundColor: '#fff',
+    backgroundColor: '#050915',
   },
   inputValue2: {
     flexDirection: 'row',
     justifyContent: 'space-around',
-    backgroundColor: '#fff',
+    backgroundColor: '#050915',
   },
   inputValue3: {
     flexDirection: 'row',
     justifyContent: 'space-around',
-    backgroundColor: '#fff',
+    backgroundColor: '#050915',
     paddingBottom: 20,
   },
+  stepModal: {
+    backgroundColor: '#07111f',
+    borderWidth: 1,
+    borderColor: 'rgba(94, 234, 212, 0.28)',
+  },
+  stepModalContent: {
+    backgroundColor: '#07111f',
+  },
   modalNS: {
-    height: 300,
+    minHeight: 300,
+    width: SCREEN_WIDTH * 0.86,
     alignSelf: 'center',
     justifyContent: 'flex-start',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(94, 234, 212, 0.28)',
+    borderRadius: 18,
+    backgroundColor: '#0b1224',
+    paddingHorizontal: 14,
+    paddingTop: 18,
+    paddingBottom: 20,
+  },
+  modalTitle: {
+    fontSize: 18,
+    color: '#E5E7EB',
+    textAlign: 'center',
+    marginBottom: 20,
+    fontWeight: '700',
   },
   modalText: {
     fontSize: 18,
-    color: KevaColors.lightText,
+    color: '#E5E7EB',
   },
   waitText: {
     fontSize: 16,
-    color: KevaColors.lightText,
+    color: '#CBD5E1',
     paddingTop: 10,
     alignSelf: 'center',
   },
   modalReward: {
     fontSize: 26,
-    color: BlueApp.settings.alternativeTextColor2,
+    color: '#E5E7EB',
     letterSpacing: 2,
+    marginTop: 26,
   },
   modalFee: {
     fontSize: 18,
@@ -450,24 +491,49 @@ var styles = StyleSheet.create({
   modalErr: {
     fontSize: 16,
     marginTop: 20,
+    color: '#FCA5A5',
+  },
+  pickerContainer: {
+    width: SCREEN_WIDTH * 0.8,
+  },
+  pickerViewContainer: {
+    width: SCREEN_WIDTH * 0.8,
+    borderRadius: 12,
+    backgroundColor: '#111827',
+  },
+  pickerPlaceholder: {
+    color: '#64748B',
+  },
+  pickerIconContainer: {
+    top: 4,
+    right: 8,
+  },
+  pickerModalView: {
+    backgroundColor: '#0b1224',
+  },
+  pickerDoneButtonText: {
+    color: '#93C5FD',
+    fontWeight: '700',
   },
   inputAndroid: {
     width: SCREEN_WIDTH*0.8,
-    color: KevaColors.lightText,
+    color: '#E5E7EB',
     textAlign: 'center',
     fontSize: 16,
-    borderWidth: THIN_BORDER,
-    borderColor: KevaColors.lightText,
-    borderRadius: 4
+    borderWidth: 1,
+    borderColor: 'rgba(94, 234, 212, 0.32)',
+    borderRadius: 10,
+    backgroundColor: '#0b1224',
   },
   inputIOS: {
     width: SCREEN_WIDTH*0.8,
-    color: KevaColors.lightText,
+    color: '#E5E7EB',
     textAlign: 'center',
     fontSize: 16,
-    borderWidth: THIN_BORDER,
-    borderColor: KevaColors.lightText,
-    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: 'rgba(94, 234, 212, 0.32)',
+    borderRadius: 10,
     height: 46,
+    backgroundColor: '#0b1224',
   },
 });

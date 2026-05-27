@@ -48,7 +48,9 @@ export async function evaluateRoleModelConfig(agent) {
   }
 
   const sourceEntry = resolved.source === 'custom' ? custom?.[activeProvider] || null : builtin?.[activeProvider] || null;
-  const baseUrl = trimValue(sourceEntry?.baseUrl || loadedConfig?.baseUrl || resolved?.def?.baseUrl || '');
+  const baseUrl = activeProvider === 'xkeva'
+    ? trimValue(resolved?.def?.baseUrl || loadedConfig?.baseUrl || sourceEntry?.baseUrl || '')
+    : trimValue(sourceEntry?.baseUrl || loadedConfig?.baseUrl || resolved?.def?.baseUrl || '');
   const model = trimValue(sourceEntry?.model || loadedConfig?.model || resolved?.def?.defaultModel || '');
 
   if (!activeState?.name && !loadedConfig?.provider) {

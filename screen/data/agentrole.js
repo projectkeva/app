@@ -432,6 +432,10 @@ class AgentChat extends React.Component {
         displayName: params.displayName || '',
         walletId: params.walletId || '',
         txid: params.txid || '',
+        agentCreatedTxid: params.agentCreatedTxid || params.txid || '',
+        agentCreatedTxTime: params.agentCreatedTxTime || '',
+        agentCreatedHeight: params.agentCreatedHeight || '',
+        namespaceCreateTxid: params.namespaceCreateTxid || params.namespace_create_txid || '',
         rootAddress: params.rootAddress || '',
         price: params.price || '',
         desc: params.desc || '',
@@ -2291,10 +2295,19 @@ class AgentChat extends React.Component {
   };
 
   writeRoleIndex = async items => {
+    const json = JSON.stringify(Array.isArray(items) ? items : [], null, 2);
+    const tmpPath = `${this.roleIndexPath}.tmp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     try {
-      await RNFS.writeFile(this.roleIndexPath, JSON.stringify(Array.isArray(items) ? items : [], null, 2), 'utf8');
+      await RNFS.writeFile(tmpPath, json, 'utf8');
+      if (await RNFS.exists(this.roleIndexPath)) {
+        await RNFS.unlink(this.roleIndexPath);
+      }
+      await RNFS.moveFile(tmpPath, this.roleIndexPath);
       return true;
     } catch (error) {
+      try {
+        if (await RNFS.exists(tmpPath)) await RNFS.unlink(tmpPath);
+      } catch {}
       console.warn('Failed to write role index', { path: this.roleIndexPath, error });
       this.replyFromAgent(`Role index write failed:\n${this.roleIndexPath}\n${String(error?.message || error || 'unknown error')}`);
       return false;
@@ -3009,14 +3022,128 @@ class AgentChat extends React.Component {
     return true;
   };
 
+  waitRoleSummonRitualDelay = (delayMs = 1000) => new Promise(resolve => setTimeout(resolve, delayMs));
+
+  waitAfterRoleSummonLoading = async (minDelayMs = 2000) => {
+    const elapsed = Date.now() - Number(this.lastRoleSummonLoadingAt || 0);
+    const remaining = Math.max(0, minDelayMs - elapsed);
+    if (remaining > 0) {
+      await this.waitRoleSummonRitualDelay(remaining);
+    }
+  };
+
+  waitAfterRoleSummonSuccess = async (delayMs = 1000) => {
+    await this.waitRoleSummonRitualDelay(delayMs);
+  };
+
+  replyRoleSummonRitual = async (roleName = '') => {
+    this.replyFromAgent(this.getRoleUiText('summonSystemCall'), { _useSatoshiAvatar: true });
+    await this.waitRoleSummonRitualDelay(1000);
+    this.replyFromAgent(this.getRoleUiText('summonLoading'), { _useSatoshiAvatar: true });
+    this.lastRoleSummonLoadingAt = Date.now();
+    const normalizedRoleName = String(roleName || '').trim();
+    if (normalizedRoleName) {
+      await this.waitAfterRoleSummonLoading(2000);
+      this.replyFromAgent(this.buildRoleSummonSuccessMessage(normalizedRoleName), { _useSatoshiAvatar: true });
+      await this.waitAfterRoleSummonSuccess(1000);
+    }
+  };
+
+  getRoleMemoryFilesSignature = async roleSlug => {
+    const safeRoleSlug = Rolecards.normalizeRoleSlug(roleSlug || this.getSpaceRoleKey()) || this.getSpaceRoleKey();
+    const roleDir = this.getRoleDirPath(safeRoleSlug);
+    const paths = ['role.json', 'verified.md', 'likely.md', 'fog.md'].map(name => `${roleDir}/${name}`);
+    const parts = [`lang:${this.getRoleLangCode?.() || this.state.roleLangCode || ''}`];
+    for (const path of paths) {
+      try {
+        const exists = await RNFS.exists(path);
+        if (!exists) {
+          parts.push(`${path}:missing`);
+          continue;
+        }
+        const stat = await RNFS.stat(path);
+        const mtime = stat?.mtime ? new Date(stat.mtime).getTime() : 0;
+        parts.push(`${path}:${Number(stat?.size || 0)}:${mtime}`);
+      } catch {
+        parts.push(`${path}:error`);
+      }
+    }
+    return parts.join('|');
+  };
+
+  getRoleLanguageFilePath = roleSlug => `${this.getRoleDirPath(roleSlug)}/role_language.json`;
+
+  writeRoleLanguageFile = async (roleSlug, code) => {
+    const safeRoleSlug = Rolecards.normalizeRoleSlug(roleSlug || this.getSpaceRoleKey()) || this.getSpaceRoleKey();
+    try {
+      const dirOk = await this.ensureRoleFilesDir();
+      if (!dirOk) return false;
+      const path = this.getRoleLanguageFilePath(safeRoleSlug);
+      const tmpPath = `${path}.tmp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      await RNFS.writeFile(tmpPath, JSON.stringify({ code: normalizeStoryLangCode(code || 'en'), updatedAt: Date.now() }, null, 2), 'utf8');
+      if (await RNFS.exists(path)) await RNFS.unlink(path);
+      await RNFS.moveFile(tmpPath, path);
+      return true;
+    } catch (error) {
+      console.warn('Failed to write role language file', { roleSlug: safeRoleSlug, error });
+      return false;
+    }
+  };
+
+  getRecentRoleLanguageFileChangeSignature = async (roleSlug, windowMs = 10000) => {
+    const safeRoleSlug = Rolecards.normalizeRoleSlug(roleSlug || this.getSpaceRoleKey()) || this.getSpaceRoleKey();
+    const path = this.getRoleLanguageFilePath(safeRoleSlug);
+    try {
+      if (!(await RNFS.exists(path))) return '';
+      const stat = await RNFS.stat(path);
+      const mtime = stat?.mtime ? new Date(stat.mtime).getTime() : 0;
+      const ctime = stat?.ctime ? new Date(stat.ctime).getTime() : 0;
+      const changedAt = Math.max(mtime || 0, ctime || 0);
+      const now = Date.now();
+      if (changedAt > 0 && now - changedAt >= 0 && now - changedAt <= windowMs) {
+        return `${path}:${Number(stat?.size || 0)}:${changedAt}`;
+      }
+    } catch {}
+    return '';
+  };
+
+  markRoleSummonRitualMemoryBaseline = async roleSlug => {
+    // Creation/random summon paths call this after their own ritual. Keep a light in-memory marker only;
+    // normal Role entry must not trigger from stale baselines.
+    const safeRoleSlug = Rolecards.normalizeRoleSlug(roleSlug || this.getSpaceRoleKey()) || this.getSpaceRoleKey();
+    const signature = await this.getRoleMemoryFilesSignature(safeRoleSlug);
+    this.roleSummonRitualMemorySignatures = {
+      ...(this.roleSummonRitualMemorySignatures || {}),
+      [safeRoleSlug]: signature,
+    };
+    return signature;
+  };
+
+  ensureRoleSummonRitualFreshBeforeLLM = async () => {
+    if (this.chatScope !== 'role' || this.isPureChatMode()) return false;
+    const active = await this.getCurrentSummonedRoleData();
+    const roleSlug = Rolecards.normalizeRoleSlug(active?.roleSlug || this.activeRoleSlug || this.state.activeRoleSlug || this.getSpaceRoleKey()) || this.getSpaceRoleKey();
+    const roleName = String(active?.roleName || active?.roleData?.roleName || roleSlug).trim();
+    if (!roleSlug || !roleName) return false;
+    const recentSignature = await this.getRecentRoleLanguageFileChangeSignature(roleSlug, 10000);
+    if (!recentSignature) return false;
+    const lastEmitted = this.lastRoleRecentRitualSignature?.[roleSlug];
+    if (lastEmitted === recentSignature) return false;
+    await this.replyRoleSummonRitual(roleName);
+    this.lastRoleRecentRitualSignature = {
+      ...(this.lastRoleRecentRitualSignature || {}),
+      [roleSlug]: recentSignature,
+    };
+    return true;
+  };
+
   handleRoleCallWithName = async (name, userMessage = null, opts = {}) => {
     this.forceScrollToBottomOnce = true;
     this.shouldScrollToEnd = true;
-    if (!opts?.isContinue) {
-      this.replyFromAgent(this.getRoleUiText('summonSystemCall'));
-      this.replyFromAgent(this.getRoleUiText('summonLoading'));
-    }
     const normalizedName = String(name || '').trim();
+    if (!opts?.isContinue) {
+      await this.replyRoleSummonRitual();
+    }
     const roleSlug = this.getSpaceRoleKey();
     const now = Date.now();
     const existingRoleData = await this.readRoleFile(roleSlug);
@@ -3064,7 +3191,10 @@ class AgentChat extends React.Component {
     }
 
     if (!opts?.isContinue) {
-      this.replyFromAgent(this.buildRoleSummonSuccessMessage(roleData.roleName));
+      await this.waitAfterRoleSummonLoading(2000);
+      this.replyFromAgent(this.buildRoleSummonSuccessMessage(roleData.roleName), { _useSatoshiAvatar: true });
+      await this.waitAfterRoleSummonSuccess(1000);
+      await this.markRoleSummonRitualMemoryBaseline(roleSlug);
       if (!this.isPureChatMode()) {
         await this.handleTriggers('/role menu', null);
       }
@@ -4482,6 +4612,9 @@ class AgentChat extends React.Component {
   };
 
   appendMessage = (messageOrText, sender = 'user', extra = null) => {
+    if (!this._isMounted) {
+      return;
+    }
     const message =
       typeof messageOrText === 'string'
         ? { ...this.buildMessage(messageOrText, sender), ...(extra || {}) }
@@ -4517,6 +4650,9 @@ class AgentChat extends React.Component {
   };
 
   appendMessages = messages => {
+    if (!this._isMounted) {
+      return;
+    }
     messages = (messages || []).filter(message => !(message?.sender === 'user' && this.shouldSuppressUserInputRecord(message._modelText || message.text || '')));
     if (!messages.length) return;
 
@@ -4546,7 +4682,7 @@ class AgentChat extends React.Component {
     );
   };
 
-  updateAgentMessage = (requestId, newText) => {
+  updateAgentMessage = (requestId, newText, extra = null) => {
     this.shouldScrollToEnd = true;
     this.setState(
       prevState => {
@@ -4556,6 +4692,7 @@ class AgentChat extends React.Component {
             didUpdate = true;
             return {
               ...message,
+              ...(extra || {}),
               text: newText,
               pending: false,
             };
@@ -4653,7 +4790,7 @@ class AgentChat extends React.Component {
       return true;
     }
 
-    if (/^\/a\s+(?:add\s+\S+\s+https?:\/\/\S+\s+\S+|(?:gpt|grok|claude|gemini|deepseek|kimi|qwen)\s+\S+)/i.test(trimmed)) {
+    if (/^\/a\s+(?:add\s+\S+\s+https?:\/\/\S+\s+\S+|(?:gpt|grok|claude|gemini|deepseek|kimi|qwen|xkeva)\s+\S+)/i.test(trimmed)) {
       return true;
     }
 
@@ -4729,6 +4866,9 @@ class AgentChat extends React.Component {
 
   handleTriggers = async (text, userMessage = null) => {
     const trimmed = text.trim();
+    const previousHandlingCommandReply = this._handlingCommandReply;
+    this._handlingCommandReply = trimmed.startsWith('/');
+    try {
     if (await this.handlePendingAISetupInput?.(trimmed)) {
       return;
     }
@@ -5117,6 +5257,12 @@ class AgentChat extends React.Component {
         return true;
       }
 
+      if (provider === 'xkeva') {
+        this.replyFromAgent('xkeva is built in.');
+        await this.handleTriggers('/role menu', null);
+        return true;
+      }
+
       const builtin = (await this.readBuiltinRegistry?.()) || {};
       if (!builtin?.[provider]) {
         this.replyFromAgent(this.getRoleUiText('builtinProviderNotFound'));
@@ -5124,11 +5270,7 @@ class AgentChat extends React.Component {
         return true;
       }
 
-      builtin[provider] = {
-        ...builtin[provider],
-        apiKey: '',
-      };
-
+      delete builtin[provider];
       await this.writeBuiltinRegistry(builtin);
 
       const activeProvider = String(this.state.llmConfig?.provider || this.currentLLMConfig?.provider || '')
@@ -5190,6 +5332,7 @@ class AgentChat extends React.Component {
       const currentModel = String(this.state.llmConfig?.provider === provider ? (this.state.llmConfig?.model || '') : '').trim();
       const lastUsedModel = String(this.currentLLMConfig?.provider === provider ? (this.currentLLMConfig?.model || '') : '').trim();
       const hasKey = !!String(builtin?.[provider]?.apiKey || '').trim();
+      const noKeyRequired = LLM_PROVIDERS[provider]?.noKeyRequired === true;
       const hasSavedModel = !!String(builtin?.[provider]?.model || currentModel || lastUsedModel).trim();
       if (hasKey && hasSavedModel) {
         if (!String(builtin?.[provider]?.model || '').trim() && (currentModel || lastUsedModel)) {
@@ -5197,7 +5340,21 @@ class AgentChat extends React.Component {
           await this.writeBuiltinRegistry?.(builtin);
         }
       }
-      if (hasKey) {
+      if (provider === 'xkeva' && noKeyRequired) {
+        const selected = await this.activateRoleModelProvider(provider);
+        if (!selected) return true;
+        this.replyFromAgent('Model selected: xkeva');
+        if (typeof this.appendRoleCommandMessage === 'function') {
+          this.appendRoleCommandMessage('/role');
+        }
+        await new Promise(resolve =>
+          this.setState({ pendingReturnToRoleMenu: false, pendingModelFinalConfirm: false, pendingRoleModelReturnToRole: false }, resolve),
+        );
+        await this.handleTriggers('/role', null);
+        return true;
+      }
+
+      if (hasKey || noKeyRequired) {
         await new Promise(resolve => this.setState({ pendingReturnToRoleMenu: false, pendingModelFinalConfirm: false, pendingRoleModelReturnToRole: false }, resolve));
         await this.handleTriggers(`/a ${provider}`, null);
         return true;
@@ -5674,7 +5831,7 @@ class AgentChat extends React.Component {
 
     if (/^\/role\s+new\b/i.test(trimmed)) {
       await new Promise(resolve => this.setState({ pendingRoleCall: true }, resolve));
-      this.replyFromAgent(this.getRoleUiText('summonPrompt').replace(this.getRoleUiText('randomSummon'), `[[/role random|${this.getRoleUiText('randomSummon')}]]`));
+      this.replyFromAgent(this.buildRoleSummonPromptMessage(), { _useSatoshiAvatar: true });
       return true;
     }
 
@@ -6774,15 +6931,21 @@ if (/^\/r\s+memory\s+recover\b/i.test(trimmed)) {
       return true;
     }
 
-    if (/^\/role\b/i.test(trimmed)) {
-      const langStatus = await this.runRoleLangCheck({ showSuccess: true });
-      if (!langStatus?.ok) {
-        await this.handleTriggers('/role lang list', null);
+    if (/^\/role\s+chat\b/i.test(trimmed)) {
+      const selected = await this.getCurrentSummonedRoleData();
+      if (!selected?.roleName) {
+        await this.handleTriggers('/role menu', null);
         return true;
       }
 
-      const roleModelStatus = await this.ensureRoleModelReady({ source: this.roleEntrySource || 'role' });
-      if (!roleModelStatus?.ok) {
+      await this.handleRoleCallWithName(selected.roleName, userMessage, { isContinue: true });
+      return true;
+    }
+
+    if (/^\/role\s*$/i.test(trimmed)) {
+      const langStatus = await this.runRoleLangCheck({ showSuccess: true });
+      if (!langStatus?.ok) {
+        await this.handleTriggers('/role lang list', null);
         return true;
       }
 
@@ -6796,6 +6959,10 @@ if (/^\/r\s+memory\s+recover\b/i.test(trimmed)) {
 
       const selected = await this.getCurrentSummonedRoleData();
       if (selected && selected.roleName) {
+        const roleModelStatus = await this.ensureRoleModelReady({ source: this.roleEntrySource || 'role' });
+        if (!roleModelStatus?.ok) {
+          return true;
+        }
         await this.handleTriggers('/role chat', null);
       }
       return true;
@@ -6938,6 +7105,9 @@ if (/^\/r\s+memory\s+recover\b/i.test(trimmed)) {
     }
 
     await this.replyFromLLM(trimmed, userMessage);
+    } finally {
+      this._handlingCommandReply = previousHandlingCommandReply;
+    }
   };
 
   prunePureChatAutoMessages = baselineCount => {
@@ -7411,7 +7581,56 @@ if (/^\/r\s+memory\s+recover\b/i.test(trimmed)) {
 
   isRoleMenuLikeText = text => {
     const raw = String(text || '');
-    return /\[\[\/(?:role|r)\b/i.test(raw) || /^\s*\/?role\s+menu\b/i.test(raw);
+    const lower = raw.toLowerCase();
+    const normalized = raw.replace(/\s+/g, ' ').trim();
+    const trimmedLower = normalized.toLowerCase();
+    return lower.includes('[[/role')
+      || lower.includes('[[/r')
+      || lower.includes('[[/a')
+      || lower.includes('[[/reopen')
+      || trimmedLower.startsWith('/role menu')
+      || trimmedLower.startsWith('role menu')
+      || trimmedLower === '/a'
+      || trimmedLower.startsWith('/a ')
+      || trimmedLower.startsWith('model status')
+      || trimmedLower.startsWith('role model check')
+      || trimmedLower.startsWith('model selected')
+      || trimmedLower.startsWith('model ')
+      || trimmedLower.startsWith('language ')
+      || trimmedLower === 'model'
+      || trimmedLower === 'memory'
+      || trimmedLower === 'voice'
+      || trimmedLower === 'voice settings'
+      || trimmedLower.includes('memory story voice model')
+      || trimmedLower.includes('story voice model')
+      || trimmedLower.startsWith('select model')
+      || trimmedLower.startsWith('enter api key')
+      || trimmedLower.startsWith('remove key')
+      || trimmedLower.startsWith('custom model')
+      || trimmedLower.startsWith('unknown provider')
+      || trimmedLower.startsWith('failed to load models')
+      || trimmedLower.startsWith('xkeva is built in.')
+      || lower.includes('free channel')
+      || lower.includes('free window')
+      || lower.includes('free_window_inactive')
+      || lower.includes('xkeva 免费通道')
+      || lower.includes('xkeva 免費通道')
+      || normalized.includes('当前 xKEVA 免费通道已结束')
+      || normalized.includes('目前 xKEVA 免費通道已結束')
+      || normalized.startsWith('模型状态')
+      || normalized.startsWith('模型狀態')
+      || normalized.startsWith('モデル状態')
+      || normalized.startsWith('모델 상태')
+      || normalized.startsWith('模型')
+      || normalized.startsWith('语言')
+      || normalized.startsWith('語言')
+      || normalized.startsWith('记忆')
+      || normalized.startsWith('記憶')
+      || normalized.startsWith('选择模型')
+      || normalized.startsWith('移除密钥')
+      || normalized.startsWith('自定义模型')
+      || normalized.startsWith('输入 API key')
+      || normalized.startsWith('輸入 API key');
   };
 
   replyFromAgent = (text, options = {}) => {
@@ -7448,7 +7667,7 @@ if (/^\/r\s+memory\s+recover\b/i.test(trimmed)) {
     const reply = {
       ...this.buildMessage(text, 'agent'),
       ...(options || {}),
-      _useSatoshiAvatar: Boolean(options?._useSatoshiAvatar || this.isRoleMenuLikeText(text)),
+      _useSatoshiAvatar: Boolean(options?._useSatoshiAvatar || this._handlingCommandReply || this.isRoleMenuLikeText(text)),
     };
     this.forceScrollToBottomOnce = true;
     this.shouldScrollToEnd = true;
@@ -7507,6 +7726,7 @@ if (/^\/r\s+memory\s+recover\b/i.test(trimmed)) {
       ...this.buildMessage(text, 'agent'),
       copyText,
       linkLabel,
+      _useSatoshiAvatar: Boolean(this._handlingCommandReply || this.isRoleMenuLikeText(text)),
     };
     this.appendMessage(reply);
   };
@@ -7666,9 +7886,13 @@ if (/^\/r\s+memory\s+recover\b/i.test(trimmed)) {
     }
     this.forceScrollToBottomOnce = true;
     this.shouldScrollToEnd = true;
-    this.appendMessage(this.buildMessage(text, 'agent'), 'user', {
+    this.appendMessage({
+      ...this.buildMessage(text, 'agent'),
+      _useSatoshiAvatar: true,
+    }, 'user', {
       _renderMode: 'commands',
       _localOnly: true,
+      _useSatoshiAvatar: true,
     });
     if (this.chatScope === 'role') {
       this.scheduleBottomFollow();
@@ -7701,6 +7925,7 @@ if (/^\/r\s+memory\s+recover\b/i.test(trimmed)) {
     const normalized = normalizeStoryLangCode(code);
     await AsyncStorage.setItem(getRoleLangStorageKey(this.agentId), normalized);
     await new Promise(resolve => this.setState({ roleLangCode: normalized }, resolve));
+    await this.writeRoleLanguageFile(this.activeRoleSlug || this.state.activeRoleSlug || this.getSpaceRoleKey(), normalized);
   };
 
   restoreLastSelectedRole = async () => {
@@ -8008,12 +8233,26 @@ if (/^\/r\s+memory\s+recover\b/i.test(trimmed)) {
     return pickFallback();
   };
 
+  buildRoleSummonPromptMessage = () => {
+    const prompt = String(this.getRoleUiText('summonPrompt') || '').trim();
+    const label = String(this.getRoleUiText('randomSummon') || '').trim();
+    if (!prompt || !label) {
+      return prompt;
+    }
+    const escapedLabel = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return prompt
+      .replace(new RegExp(`\\s*(?:,|，|、)?\\s*(?:or|或|或者)?\\s*${escapedLabel}\\s*[。.!！?？]?`, 'i'), '')
+      .replace(/(?:,|，|、|;|；|or|或|或者)\s*[。.!！?？]?$/i, '')
+      .replace(/\s{2,}/g, ' ')
+      .trim();
+  };
+
   showRoleCreateWizard = async () => {
     const sampleName = 'MyRole';
     const lines = [
       this.getRoleUiText('createRoleTitle'),
       '',
-      this.getRoleUiText('summonPrompt').replace(this.getRoleUiText('randomSummon'), `[[/role random|${this.getRoleUiText('randomSummon')}]]`),
+      this.buildRoleSummonPromptMessage(),
       '',
       this.getRoleUiText('example'),
       `[[/role new|${this.getRoleUiText('useName', { name: sampleName })}]]`,
@@ -8076,7 +8315,9 @@ if (/^\/r\s+memory\s+recover\b/i.test(trimmed)) {
       ),
     );
     await this.clearPendingNewRole();
-    this.replyFromAgent(this.buildRoleSummonSuccessMessage(name));
+    await this.waitAfterRoleSummonLoading(2000);
+    this.replyFromAgent(this.buildRoleSummonSuccessMessage(name), { _useSatoshiAvatar: true });
+    await this.waitAfterRoleSummonSuccess(1000);
     if (!this.isPureChatMode()) {
       await this.handleTriggers('/role menu', null);
     }
@@ -8084,8 +8325,7 @@ if (/^\/r\s+memory\s+recover\b/i.test(trimmed)) {
   };
 
   createGeneratedRoleAndActivate = async name => {
-    this.replyFromAgent(this.getRoleUiText('summonSystemCall'));
-    this.replyFromAgent(this.getRoleUiText('summonLoading'));
+    await this.replyRoleSummonRitual();
     const normalizedName = String(name || '').trim();
     if (!normalizedName) {
       await this.handleTriggers('/role new', null);
@@ -8132,7 +8372,9 @@ if (/^\/r\s+memory\s+recover\b/i.test(trimmed)) {
   };
 
   getRoleLangMenuMessage = () => {
-    const current = getStoryLangLabel(this.getRoleLangCode() || 'en');
+    const currentCode = this.getRoleLangCode();
+    const unsetLabel = String(this.getRoleMenuText('currentLanguageNotSet') || 'Not set').replace(/^.*?[:：]\s*/, '') || 'Not set';
+    const current = currentCode ? getStoryLangLabel(currentCode) : unsetLabel;
     const commonItems = this.getCommonStoryLangItems();
     const commonLines = [];
     for (let i = 0; i < commonItems.length; i += 3) {
@@ -8151,7 +8393,10 @@ if (/^\/r\s+memory\s+recover\b/i.test(trimmed)) {
 
   getRoleMoreLangMenuMessage = () => {
     const items = this.getMoreStoryLangItems();
-    const lines = [`[[/role lang list|${this.getRoleMenuText('changeLanguage')}]]  ${getStoryLangLabel(this.getRoleLangCode() || 'en')}`, '', this.getRoleMenuText('supportedLangs'), ''];
+    const currentCode = this.getRoleLangCode();
+    const unsetLabel = String(this.getRoleMenuText('currentLanguageNotSet') || 'Not set').replace(/^.*?[:：]\s*/, '') || 'Not set';
+    const current = currentCode ? getStoryLangLabel(currentCode) : unsetLabel;
+    const lines = [`[[/role lang list|${this.getRoleMenuText('changeLanguage')}]]  ${current}`, '', this.getRoleMenuText('supportedLangs'), ''];
     for (let i = 0; i < items.length; i += 3) {
       lines.push(items.slice(i, i + 3).map(item => `[[/role lang ${item.code}|${item.label}]]`).join('   '));
       if (i + 3 < items.length) {
@@ -8178,6 +8423,8 @@ if (/^\/r\s+memory\s+recover\b/i.test(trimmed)) {
       '',
     ];
     if (!hasRole) {
+      lines.push(`[[/role random|${this.getRoleUiText('randomSummon')}]]`);
+      lines.push('');
       lines.push(`[[/role memory rebuild|${this.getRoleUiText('restoreMemoryMenu')}]]`);
       lines.push('');
     }
@@ -9396,11 +9643,111 @@ if (/^\/r\s+memory\s+recover\b/i.test(trimmed)) {
 
   getRoleModelReasonLabel = reason => this.getRoleUiText(`roleModelReason_${String(reason || '').trim()}`) || String(reason || '').trim();
 
+  formatRoleModelStatusBlocks = value => {
+    const blocks = Number(value);
+    if (!Number.isFinite(blocks) || blocks < 0) return '-';
+    const minutes = Math.round(blocks * 2);
+    return this.getRoleUiText('roleModelStatusMinutes', { minutes }) || `${minutes} minutes`;
+  };
+
+  getRoleModelStatusText = (key, fallback, vars = {}) => this.getRoleUiText(key, vars) || fallback;
+
+  buildRoleModelStatusLine = (key, fallbackLabel, text) => {
+    const label = this.getRoleModelStatusText(key, fallbackLabel);
+    const separator = this.getRoleModelStatusText('roleModelStatusSeparator', ': ');
+    return `${label}${separator}${text}`;
+  };
+
+  getRoleModelNodeLabel = value => {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+    const noProtocol = raw.replace(/^https?:\/\//i, '');
+    const hostPort = noProtocol.split('/')[0] || noProtocol;
+    return hostPort.replace(/:\d+$/, '').trim();
+  };
+
+  getRoleModelVersionLabel = value => {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+    const last = raw.split('/').filter(Boolean).pop() || raw;
+    const normalized = last.trim();
+    const match = normalized.match(/(?:^|[-_])(free)(?:$|[-_])/i);
+    if (match) return match[1].toLowerCase();
+    return normalized;
+  };
+
+  buildRoleModelStatusMessage = (status, apiStatus = null) => {
+    const cfg = status?.loadedConfig || {};
+    const provider = String(status?.activeProvider || cfg.provider || '').trim().toLowerCase();
+    const model = String(cfg.model || status?.resolved?.def?.defaultModel || '').trim();
+    const baseUrl = String(cfg.baseUrl || '').trim();
+    const value = (item, fallback = '-') => {
+      if (item === null || item === undefined || item === '') return fallback;
+      return String(item);
+    };
+    const numberValue = (item, fallback = '-') => {
+      const n = Number(item);
+      return Number.isFinite(n) ? String(n) : fallback;
+    };
+    const lines = [
+      this.getRoleModelStatusText('roleModelStatusTitle', 'Model status'),
+      '',
+      this.buildRoleModelStatusLine(
+        'roleModelStatusState',
+        'Status',
+        status?.ok
+          ? this.getRoleModelStatusText('roleModelStatusAvailable', 'Available')
+          : this.getRoleModelStatusText('roleModelStatusIssue', 'Issue'),
+      ),
+      this.buildRoleModelStatusLine('roleModelStatusService', 'Service', value(provider)),
+    ];
+    const nodeLabel = this.getRoleModelNodeLabel(baseUrl);
+    if (nodeLabel) {
+      lines.push(this.buildRoleModelStatusLine('roleModelStatusNode', 'Node', nodeLabel));
+    }
+
+    if (provider === 'xkeva') {
+      lines.push('');
+      if (apiStatus?.ok && apiStatus?.json) {
+        const json = apiStatus.json || {};
+        const channel = json.free_channel || {};
+        const quota = json.free_quota || {};
+        const access = json.free_access || {};
+        const usage = json.wallet_usage || {};
+        const maxRequests = usage.max_requests ?? quota.max_requests;
+        const maxTokens = usage.max_tokens ?? quota.max_tokens;
+        const usedBlocks = access.used_blocks;
+        const remainingBlocks = access.remaining_blocks;
+
+        const effective = json.effective_upstream || {};
+        const rawEffectiveModel = effective.model_version || effective.model || json.effective_model_version || json.effective_model || json.model_version || json.model || model;
+        const effectiveModel = this.getRoleModelVersionLabel(rawEffectiveModel);
+        lines.push(this.buildRoleModelStatusLine('roleModelStatusModel', 'Model', value(effectiveModel)));
+        lines.push(this.buildRoleModelStatusLine('roleModelStatusConnections', 'Connections', `${numberValue(channel.active_wallets)}/${numberValue(channel.max_active_wallets)}`));
+        lines.push(this.buildRoleModelStatusLine('roleModelStatusUsed', 'Used', `${numberValue(usedBlocks)}（${this.formatRoleModelStatusBlocks(usedBlocks)}）`));
+        lines.push(this.buildRoleModelStatusLine('roleModelStatusRemaining', 'Remaining', `${numberValue(remainingBlocks)}（${this.formatRoleModelStatusBlocks(remainingBlocks)}）`));
+        lines.push(this.buildRoleModelStatusLine('roleModelStatusRequests', 'Requests', `${numberValue(usage.requests_remaining, maxRequests !== undefined ? String(maxRequests) : '-')}/${numberValue(maxRequests)}`));
+        lines.push(this.buildRoleModelStatusLine('roleModelStatusUsage', 'Usage', `${numberValue(usage.tokens_remaining, maxTokens !== undefined ? String(maxTokens) : '-')}/${numberValue(maxTokens)}`));
+      } else {
+        lines.push(this.buildRoleModelStatusLine('roleModelStatusQueryFailed', 'Status query failed', value(apiStatus?.status || apiStatus?.error || 'unknown')));
+      }
+    } else if (model) {
+      lines.push(this.buildRoleModelStatusLine('roleModelStatusModel', 'Model', value(model)));
+    }
+
+    return lines.join('\n');
+  };
+
   runRoleModelCheck = async (options = {}) => {
     const status = await evaluateRoleModelConfig(this);
     if (status?.ok) {
       if (options?.showSuccess) {
-        this.replyFromAgent(this.getRoleUiText('roleModelCheckOk'));
+        let apiStatus = null;
+        const provider = String(status?.activeProvider || status?.loadedConfig?.provider || '').trim().toLowerCase();
+        if (provider === 'xkeva' && typeof this.fetchXkevaModelStatus === 'function') {
+          apiStatus = await this.fetchXkevaModelStatus(status?.loadedConfig?.baseUrl || '', { includeWalletAuth: true });
+        }
+        this.replyFromAgent(this.buildRoleModelStatusMessage(status, apiStatus), { _useSatoshiAvatar: true });
       }
       return status;
     }
@@ -9413,13 +9760,30 @@ if (/^\/r\s+memory\s+recover\b/i.test(trimmed)) {
     return status;
   };
 
+  tryAutoUseXkevaRoleModel = async () => {
+    try {
+      const available = typeof this.checkXkevaAvailable === 'function' ? await this.checkXkevaAvailable() : false;
+      if (!available) return false;
+      return await this.activateRoleModelProvider('xkeva');
+    } catch (error) {
+      console.warn('Failed to auto-select xkeva role model', error);
+      return false;
+    }
+  };
+
   ensureRoleModelReady = async (options = {}) => {
-    const status = await this.runRoleModelCheck({ ...options, showFailure: false, showSuccess: false });
+    let status = await this.runRoleModelCheck({ ...options, showFailure: false, showSuccess: false });
+    if (!status?.ok && !String(status?.activeProvider || '').trim()) {
+      const selected = await this.tryAutoUseXkevaRoleModel();
+      if (selected) {
+        status = await this.runRoleModelCheck({ ...options, showFailure: false, showSuccess: false });
+      }
+    }
     if (!status?.ok) {
       await new Promise(resolve =>
         this.setState({ pendingReturnToRoleMenu: true, pendingModelFinalConfirm: true, pendingRoleModelReturnToRole: true }, resolve),
       );
-      await this.handleTriggers('/a list', null);
+      await this.handleTriggers('/rolemodel', null);
       return status;
     }
 
@@ -9492,6 +9856,8 @@ if (/^\/r\s+memory\s+recover\b/i.test(trimmed)) {
     ['deepseek', 'DeepSeek', 'https://platform.deepseek.com/api_keys'],
     ['kimi', 'Kimi', 'https://platform.moonshot.cn/console/api-keys'],
     ['qwen', 'Qwen', 'https://dashscope.console.aliyun.com/apiKey'],
+    ['openrouter', 'OpenRouter', 'https://openrouter.ai/keys'],
+    ['xkeva', 'xKEVA', 'https://openrouter.ai/keys'],
   ];
 
   openModelApiUsageUrl = async provider => {
@@ -9528,15 +9894,19 @@ if (/^\/r\s+memory\s+recover\b/i.test(trimmed)) {
     const activeProvider = String(this.state.llmConfig?.provider || this.currentLLMConfig?.provider || '')
       .trim()
       .toLowerCase();
-    const builtinProviders = ['gpt', 'grok', 'claude', 'gemini', 'deepseek', 'kimi', 'qwen'];
-    const statusDot = (name, hasKey) => (activeProvider === name ? '🟩' : hasKey ? '🟩' : '🟥');
+    const builtinProviders = ['xkeva', 'openrouter', 'gpt', 'grok', 'claude', 'gemini', 'deepseek', 'kimi', 'qwen'];
+    const xkevaAvailable = typeof this.checkXkevaAvailable === 'function' ? await this.checkXkevaAvailable() : false;
+    const statusDot = (name, hasKey) => {
+      if (name === 'xkeva') return xkevaAvailable ? '🟩' : '🟥';
+      return activeProvider === name ? '🟩' : hasKey ? '🟩' : '🟥';
+    };
     const activeSuffix = name => (activeProvider === String(name || '').trim().toLowerCase() ? ' ●' : '');
 
     const useLabel = this.getRoleUiText('useModel') || 'use';
 
     const builtinLines = builtinProviders.map(name => {
       const hasCurrentKey = activeProvider === name && !!String(this.state.llmConfig?.apiKey || this.currentLLMConfig?.apiKey || '').trim();
-      const hasKey = !!String(builtin?.[name]?.apiKey || '').trim() || hasCurrentKey;
+      const hasKey = name === 'xkeva' ? xkevaAvailable : (!!String(builtin?.[name]?.apiKey || '').trim() || hasCurrentKey);
       return `${statusDot(name, hasKey)} [[/rolemodel builtin ${name}|${useLabel}]] ${name}${activeSuffix(name)}`;
     });
 
@@ -9569,14 +9939,15 @@ if (/^\/r\s+memory\s+recover\b/i.test(trimmed)) {
     const builtin = (await this.readBuiltinRegistry?.()) || {};
     const custom = (await this.readCustomRegistry?.()) || {};
 
-    const builtinProviders = ['gpt', 'grok', 'claude', 'gemini', 'deepseek', 'kimi', 'qwen'];
+    const builtinProviders = ['xkeva', 'openrouter', 'gpt', 'grok', 'claude', 'gemini', 'deepseek', 'kimi', 'qwen'];
     const removeLabel = this.getRoleUiText('removeModel') || 'remove';
     const lines = [this.getRoleUiText('removeKeyCustomModel'), ''];
 
     let hasAny = false;
 
+    const activeProvider = String(this.state.llmConfig?.provider || this.currentLLMConfig?.provider || '').trim().toLowerCase();
     builtinProviders.forEach(name => {
-      if (builtin?.[name]?.apiKey) {
+      if (name !== 'xkeva' && (builtin?.[name]?.apiKey || !!builtin?.[name] || activeProvider === name)) {
         hasAny = true;
         lines.push(`🟩 [[/rolemodel remove builtin ${name}|${removeLabel}]] ${name}`);
         lines.push('');
@@ -10412,7 +10783,7 @@ if (/^\/r\s+memory\s+recover\b/i.test(trimmed)) {
     const { shortCode } = this.props.navigation.state.params || {};
     const localAvatarUri = this.getAgentLocalAvatarUri();
     const assetAvatarUri = buildHeadAssetUri(shortCode);
-    const source = (item?._useSatoshiAvatar || this.shouldUseSatoshiPreLLMAvatar(item, visibleIndex))
+    const source = (item?._useSatoshiAvatar || this.isRoleMenuLikeText(item?.text || '') || this.shouldUseSatoshiPreLLMAvatar(item, visibleIndex))
       ? SATOSHI_PRE_LLM_AVATAR_SOURCE
       : (localAvatarUri ? { uri: localAvatarUri } : (assetAvatarUri ? { uri: assetAvatarUri } : require('../../img/bluebeast.png')));
     return (

@@ -946,6 +946,7 @@ export async function findMyNamespaces(wallet, ecl) {
       id: nsId,
       walletId: wallet.getID(),
       txId: tx.txid,
+      rootAddress: utxo.address || '',
     }
   }
 

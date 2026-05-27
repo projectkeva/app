@@ -176,10 +176,11 @@ html,body{
   margin-top:22px;
   min-height:18px;
   line-height:1.35;
-  white-space:pre-line;
+  white-space:nowrap;
   text-shadow:0 0 8px rgba(255,216,74,0.35);
 }
 .status-line.ready{color:#53DD6C;text-shadow:0 0 8px rgba(83,221,108,0.35);}
+.status-line.network-ready{color:#53DD6C;text-shadow:0 0 8px rgba(83,221,108,0.35);}
 .status-line.unavailable{color:#ff6b6b;text-shadow:0 0 8px rgba(255,107,107,0.35);}
 @media (max-width:560px){
   .boot-card{flex-direction:column;text-align:center;min-height:420px;padding:22px 18px;}
@@ -205,6 +206,7 @@ html,body{
         <button type="button" data-action="role">Role</button>
         <button type="button" data-action="chat">Chat</button>
         <button type="button" data-action="story">Story</button>
+        <button type="button" data-action="node">Node</button>
       </div>
       <div id="satoshiStatus" class="status-line">Waiting for Get Satoshi Card command</div>
       <div id="satoshiHint" class="hint">Click Get Satoshi Card to get agent card.</div>
@@ -215,33 +217,33 @@ html,body{
   const TEXT={
     en:{
       title:'PROJECT KEVA AGENT CARD',idLabel:'ID:',
-      waiting:'Waiting for connect Satoshi…',requesting:'Contacting Satoshi…',checking_network:'Confirming environment…',
+      waiting:'Waiting for Satoshi…',requesting:'Contacting Satoshi…',checking_network:'Confirming environment…',
       network_ready:'Network ready. Click Get Satoshi Card.',checking_wallet:'Checking wallet…',creating_wallet:'Creating SATOSHI wallet…',getting_address:'Getting wallet address…',
       receiving:'Waiting Satoshi…',restoring_memory:'Restoring Satoshi memory on-chain…',
       network_unstable:'Environment is not ready. Waiting to refresh and retry…',network_unstableMain:'Environment is not ready.',network_unstableWait:'Waiting to refresh and retry…',
-      unavailable:'Waiting for connection…',ready:'Satoshi agent is ready',
+      unavailable:'Waiting for Satoshi…',ready:'Satoshi agent is ready',
       hint:'Click Get Satoshi Card to get agent card.',waitHint:'Please wait for Satoshi information.',restoreHint:'Restoring Satoshi memory in the background.',readyHint:'Click Satoshi is here to view the Satoshi card.',
-      get:'Get Satoshi Card',readyButton:'Satoshi is here',role:'Role',chat:'Chat',story:'Story'
+      get:'Get Satoshi Card',readyButton:'Satoshi is here',role:'Role',chat:'Chat',story:'Story',node:'Node'
     },
     'zh-cn':{
       title:'PROJECT KEVA AGENT CARD',idLabel:'ID：',
-      waiting:'等待连接 Satoshi…',requesting:'正在联系 Satoshi…',checking_network:'正在确认环境…',
+      waiting:'等待 Satoshi…',requesting:'正在联系 Satoshi…',checking_network:'正在确认环境…',
       network_ready:'网络准备就绪，可以点击 Get Satoshi Card。',checking_wallet:'正在检测钱包…',creating_wallet:'正在创建 SATOSHI 钱包…',getting_address:'正在获取钱包地址…',
       receiving:'正在等待 Satoshi…',restoring_memory:'正在链上恢复 Satoshi 记忆…',
       network_unstable:'环境未准备好，等待刷新重试…',network_unstableMain:'环境未准备好。',network_unstableWait:'等待刷新重试…',
-      unavailable:'等待连接…',ready:'Satoshi agent 已就绪',
+      unavailable:'等待 Satoshi…',ready:'Satoshi agent 已就绪',
       hint:'点击 Get Satoshi Card 获取聪卡。',waitHint:'请等待 Satoshi 信息。',restoreHint:'正在后台恢复 Satoshi 记忆。',readyHint:'点击 Satoshi is here 查看聪卡。',
-      get:'Get Satoshi Card',readyButton:'Satoshi is here',role:'角色',chat:'聊天',story:'故事'
+      get:'Get Satoshi Card',readyButton:'Satoshi is here',role:'角色',chat:'聊天',story:'故事',node:'节点'
     },
     'zh-tw':{
       title:'PROJECT KEVA AGENT CARD',idLabel:'ID：',
-      waiting:'等待連接 Satoshi…',requesting:'正在聯絡 Satoshi…',checking_network:'正在確認環境…',
+      waiting:'等待 Satoshi…',requesting:'正在聯絡 Satoshi…',checking_network:'正在確認環境…',
       network_ready:'網路準備就緒，可以點擊 Get Satoshi Card。',checking_wallet:'正在檢測錢包…',creating_wallet:'正在建立 SATOSHI 錢包…',getting_address:'正在取得錢包地址…',
       receiving:'正在等待 Satoshi…',restoring_memory:'正在鏈上恢復 Satoshi 記憶…',
       network_unstable:'環境未準備好，等待刷新重試…',network_unstableMain:'環境未準備好。',network_unstableWait:'等待刷新重試…',
-      unavailable:'等待連接…',ready:'Satoshi agent 已就緒',
+      unavailable:'等待 Satoshi…',ready:'Satoshi agent 已就緒',
       hint:'點擊 Get Satoshi Card 取得聰卡。',waitHint:'請等待 Satoshi 資訊。',restoreHint:'正在背景恢復 Satoshi 記憶。',readyHint:'點擊 Satoshi is here 查看聰卡。',
-      get:'Get Satoshi Card',readyButton:'Satoshi is here',role:'角色',chat:'聊天',story:'故事'
+      get:'Get Satoshi Card',readyButton:'Satoshi is here',role:'角色',chat:'聊天',story:'故事',node:'節點'
     },
     ja:{
       title:'PROJECT KEVA AGENT CARD',idLabel:'ID：',
@@ -251,7 +253,7 @@ html,body{
       network_unstable:'環境の準備ができていません。更新して再試行します…',network_unstableMain:'環境の準備ができていません。',network_unstableWait:'更新して再試行します…',
       unavailable:'接続を待っています…',ready:'Satoshi agent の準備ができました',
       hint:'Get Satoshi Card をクリックしてカードを取得。',waitHint:'Satoshi 情報をお待ちください。',restoreHint:'バックグラウンドで Satoshi の記憶を復元しています。',readyHint:'Satoshi is here をクリックしてカードを見る。',
-      get:'Get Satoshi Card',readyButton:'Satoshi is here',role:'ロール',chat:'チャット',story:'ストーリー'
+      get:'Get Satoshi Card',readyButton:'Satoshi is here',role:'ロール',chat:'チャット',story:'ストーリー',node:'ノード'
     },
     ko:{
       title:'PROJECT KEVA AGENT CARD',idLabel:'ID:',
@@ -261,7 +263,7 @@ html,body{
       network_unstable:'환경이 준비되지 않았습니다. 새로고침 후 다시 시도합니다…',network_unstableMain:'환경이 준비되지 않았습니다.',network_unstableWait:'새로고침 후 다시 시도합니다…',
       unavailable:'연결 대기 중…',ready:'Satoshi agent 준비 완료',
       hint:'Get Satoshi Card를 눌러 카드를 받으세요.',waitHint:'Satoshi 정보를 기다려 주세요.',restoreHint:'백그라운드에서 Satoshi 메모리를 복원 중입니다.',readyHint:'Satoshi is here를 눌러 카드를 확인하세요.',
-      get:'Get Satoshi Card',readyButton:'Satoshi is here',role:'역할',chat:'채팅',story:'스토리'
+      get:'Get Satoshi Card',readyButton:'Satoshi is here',role:'역할',chat:'채팅',story:'스토리',node:'노드'
     },
     es:{
       title:'TARJETA DE AGENTE PROJECT KEVA',idLabel:'ID:',
@@ -271,7 +273,7 @@ html,body{
       network_unstable:'El entorno no está listo. Esperando para actualizar y reintentar…',network_unstableMain:'El entorno no está listo.',network_unstableWait:'Esperando para actualizar y reintentar…',
       unavailable:'Esperando conexión…',ready:'El agente Satoshi está listo',
       hint:'Pulsa Get Satoshi Card para obtener la tarjeta.',waitHint:'Espera la información de Satoshi.',restoreHint:'Restaurando la memoria de Satoshi en segundo plano.',readyHint:'Pulsa Satoshi is here para ver la tarjeta.',
-      get:'Get Satoshi Card',readyButton:'Satoshi is here',role:'Rol',chat:'Chat',story:'Historia'
+      get:'Get Satoshi Card',readyButton:'Satoshi is here',role:'Rol',chat:'Chat',story:'Historia',node:'Nodo'
     },
     fr:{
       title:'CARTE AGENT PROJECT KEVA',idLabel:'ID :',
@@ -281,12 +283,12 @@ html,body{
       network_unstable:'L’environnement n’est pas prêt. Attente d’actualisation et de nouvelle tentative…',network_unstableMain:'L’environnement n’est pas prêt.',network_unstableWait:'Attente d’actualisation et de nouvelle tentative…',
       unavailable:'En attente de connexion…',ready:'L’agent Satoshi est prêt',
       hint:'Cliquez sur Get Satoshi Card pour obtenir la carte.',waitHint:'Veuillez attendre les informations de Satoshi.',restoreHint:'Restauration de la mémoire Satoshi en arrière-plan.',readyHint:'Cliquez sur Satoshi is here pour voir la carte.',
-      get:'Get Satoshi Card',readyButton:'Satoshi is here',role:'Rôle',chat:'Chat',story:'Histoire'
+      get:'Get Satoshi Card',readyButton:'Satoshi is here',role:'Rôle',chat:'Chat',story:'Histoire',node:'Nœud'
     },
   };
   const SATOSHI_WAIT_SECONDS=10;
   let lang='en';
-  let currentStatus='checking_network';
+  let currentStatus='waiting';
   let hasSatoshi=false;
   let satoshiAlphaValue=null;
   let electrumHeight=null;
@@ -294,6 +296,7 @@ html,body{
   let apiMessage='';
   let canOpenChatStory=false;
   let satoshiId='';
+  let selectedNodeName='';
   let satoshiWaitTimer=null;
   let satoshiWaitLeft=0;
 
@@ -347,28 +350,38 @@ html,body{
     },1000);
   }
 
+  function getReadyNodeLabel(){
+    const value=String(selectedNodeName || '').trim();
+    return value || 'Network';
+  }
+
+  function getNetworkHeightLine(){
+    const e=Number(electrumHeight);
+    const a=Number(satoshiApiHeight);
+    if(Number.isFinite(e) && Number.isFinite(a))return `E:${e} / S:${a}`;
+    if(Number.isFinite(e))return `E:${e}`;
+    if(Number.isFinite(a))return `S:${a}`;
+    return '';
+  }
+
   function statusText(status){
     const table=TEXT[normalizeLang(lang)] || TEXT.en;
     const text=table[status] || TEXT.en[status] || table.waiting;
-    if(status==='checking_network' || status==='network_ready'){
-      const e=Number(electrumHeight);
-      const a=Number(satoshiApiHeight);
-      if(status==='network_ready'){
-        if(Number.isFinite(e) && Number.isFinite(a))return `${text}\n\nE:${e} / S:${a}`;
-        if(Number.isFinite(e))return `${text}\n\nE:${e}`;
-      }
-      if(Number.isFinite(e) && Number.isFinite(a))return `${text} E:${e} / S:${a}`;
-      if(Number.isFinite(e))return `${text} E:${e}`;
+    if(status==='ready'){
+      const id=String(satoshiId || '').trim();
+      return id ? `Agent ${id} is ready.` : text;
+    }
+    if(status==='checking_network'){
+      const detail=getNetworkHeightLine();
+      if(detail)return detail;
+    }
+    if(status==='network_ready'){
+      return getNetworkHeightLine() || text;
     }
     if(status==='network_unstable'){
-      const e=Number(electrumHeight);
-      const a=Number(satoshiApiHeight);
-      const detail=Number.isFinite(e) && Number.isFinite(a) ? `E:${e} / S:${a}` : '';
+      const detail=getNetworkHeightLine();
       const first=table.network_unstableMain || text;
-      const second=table.network_unstableWait || '';
-      return `${first}${detail ? ` ${detail}` : ''}${second ? `
-
-${second}` : ''}`;
+      return `${first}${detail ? ` ${detail}` : ''}`;
     }
     if(status==='api_error'){
       return apiMessage || 'Satoshi API error. Please try again later.';
@@ -437,7 +450,7 @@ ${second}` : ''}`;
     if(avatar)avatar.classList.toggle('satoshi-disabled',!hasSatoshi);
     if(line){
       line.textContent=statusText(currentStatus);
-      line.className='status-line '+(currentStatus==='ready'?'ready':currentStatus==='unavailable'?'unavailable':'');
+      line.className='status-line '+(currentStatus==='ready'?'ready':currentStatus==='network_ready'?'network-ready':currentStatus==='unavailable'?'unavailable':'');
     }
     const table=TEXT[normalizeLang(lang)] || TEXT.en;
     const title=document.getElementById('satoshiTitle');
@@ -445,7 +458,7 @@ ${second}` : ''}`;
     const classValue=document.getElementById('satoshiClassValue');
     if(title)title.textContent=table.title || TEXT.en.title;
     const idText=String(satoshiId || '').trim();
-    const showId=hasSatoshi && currentStatus==='ready' && !!idText;
+    const showId=false;
     const classField=classLabel ? classLabel.closest('.field') : null;
     if(classField)classField.style.display=showId ? '' : 'none';
     if(classLabel)classLabel.textContent=table.idLabel || TEXT.en.idLabel || 'ID:';
@@ -454,7 +467,8 @@ ${second}` : ''}`;
       const action=btn.dataset.action;
       if(action==='get')return;
       btn.textContent=table[action] || TEXT.en[action] || action;
-      if(action==='role') btn.disabled=!(hasSatoshi && currentStatus==='ready');
+      if(action==='node') btn.disabled=false;
+      else if(action==='role') btn.disabled=!(hasSatoshi && currentStatus==='ready');
       else btn.disabled=!(hasSatoshi && currentStatus==='ready' && canOpenChatStory);
     });
     const getBtn=document.querySelector('button[data-action="get"]');
@@ -502,6 +516,7 @@ ${second}` : ''}`;
       apiMessage=payload.apiMessage || '';
       canOpenChatStory=!!payload.canOpenChatStory;
       satoshiId=payload.satoshiId || payload.shortCode || payload.namespaceId || satoshiId || '';
+      selectedNodeName=payload.selectedNodeName || payload.nodeName || selectedNodeName || '';
       currentStatus=payload.status || (hasSatoshi ? 'ready' : 'waiting');
       if(typeof payload.countdown !== 'undefined') window.__satoshiCountdown=payload.countdown;
       if(isSatoshiWaitStatus(currentStatus)) startSatoshiWaitTicker();
@@ -519,8 +534,8 @@ ${second}` : ''}`;
     }catch(_){}
     try{
       if(window.ReactNativeWebView && typeof window.ReactNativeWebView.postMessage === 'function'){
-        var getAction=(hasSatoshi && currentStatus==='ready') ? 'open_satoshi_namespace_list' : 'open_satoshi_get_namespace';
-        var nativeActions={get:getAction,role:'open_satoshi_role',chat:'open_satoshi_chat',story:'open_satoshi_story'};
+        var getAction=(hasSatoshi && currentStatus==='ready') ? 'open_room' : 'open_satoshi_get_namespace';
+        var nativeActions={get:getAction,role:'open_satoshi_role',chat:'open_satoshi_chat',story:'open_satoshi_story',node:'open_node_window'};
         if(nativeActions[action]){
           window.ReactNativeWebView.postMessage(nativeActions[action]);
           delivered=true;
@@ -528,13 +543,15 @@ ${second}` : ''}`;
       }
     }catch(_){}
     try{
-      if(action==='get' && !(hasSatoshi && currentStatus==='ready')) window.location.href='appd://open_satoshi_get_namespace';
+      if(action==='get') window.location.href=(hasSatoshi && currentStatus==='ready') ? 'appd://open_room' : 'appd://open_satoshi_get_namespace';
     }catch(_){}
     if(delivered)return;
     if(action === 'get'){
       window.open('https://satoshi.nakamotoinstitute.org/','_blank');
+    }else if(action === 'node'){
+      window.location.href='file:///android_asset/os/index.html';
     }else{
-      const labels={role:'Role',chat:'Chat',story:'Story'};
+      const labels={role:'Role',chat:'Chat',story:'Story',node:'Node'};
       alert((labels[action] || 'This action') + ' is only available inside the Kevacoin app.');
     }
   }
@@ -559,6 +576,7 @@ ${second}` : ''}`;
   });
   window.addEventListener('message',event=>applyPayload(event.data));
   document.addEventListener('message',event=>applyPayload(event.data));
+  setTimeout(()=>postNativeMessage('refresh_satoshi_status'),0);
   if(isSatoshiWaitStatus(currentStatus)) startSatoshiWaitTicker();
   else renderStatus();
 })();

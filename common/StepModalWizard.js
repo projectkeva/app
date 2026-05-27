@@ -84,13 +84,13 @@ export default class StepModal extends Component {
   }
 
   render() {
-    let {stepComponents, showNext, showSkip} = this.props;
+    let {stepComponents, showNext, showSkip, modalStyle, contentStyle} = this.props;
 
     return (
       <View>
         <Modal isVisible={true}>
           <View
-            style={customStyles.modal}
+            style={[customStyles.modal, modalStyle]}
           >
             <View
               style={{ flexDirection: "row", justifyContent: "space-between", paddingVertical: 16 }}
@@ -108,13 +108,16 @@ export default class StepModal extends Component {
               }
             </View>
             <View
-              style={{
-                marginTop: 17,
-                backgroundColor: "#ffffff",
-                marginLeft: 10,
-                marginRight: 10,
-                alignItems: "center",
-              }}
+              style={[
+                {
+                  marginTop: 17,
+                  backgroundColor: "#ffffff",
+                  marginLeft: 10,
+                  marginRight: 10,
+                  alignItems: "center",
+                },
+                contentStyle,
+              ]}
             >
               { stepComponents[this.props.currentPage] }
             </View>

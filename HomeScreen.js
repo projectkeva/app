@@ -1,7 +1,8 @@
 // HomeScreen.js (clean, no debug toolbar)
-import React, { useCallback, useEffect, useMemo, useRef } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, StatusBar, Alert, TouchableOpacity } from 'react-native';
 import RNFS from 'react-native-fs';
+import TcpSocketModule from 'react-native-tcp-socket';
 import AsyncStorage from '@react-native-community/async-storage';
 import { WebView } from 'react-native-webview';
 import { useNavigation } from 'react-navigation-hooks';
@@ -9,7 +10,8 @@ import { useDispatch, useSelector } from 'react-redux';
 import BlueElectrum from './BlueElectrum';
 import BlueApp from './BlueApp';
 import { AppStorage, HDSegwitP2SHWallet } from './class';
-import { requestServerNamespace, getServerBlockHeight } from './class/namespace-api';
+import { requestServerNamespace, getServerBlockHeight, getCachedServerNamespaceResult, getNamespaceApiUrl } from './class/namespace-api';
+import { getXkevaApiUrl } from './class/xkeva-api';
 import { setNamespaceList } from './actions';
 import { findMyNamespaces } from './class/keva-ops';
 import { fetchDoppelOnChainMemory } from './screen/data/agentrole_doppel_memory';
@@ -22,13 +24,27 @@ const SATOSHI_WALLET_LABEL = 'SATOSHI';
 const SATOSHI_DOPPEL_MEMORY_ID = '715331578';
 const SATOSHI_MEMORY_RESTORE_KEY = 'satoshi_memory_restore_v1';
 const SATOSHI_MEMORY_RESTORE_STATUS_KEY = 'satoshi_memory_restore_status_v1';
+const SATOSHI_SERVER_NAMESPACE_META_KEY = 'satoshi_server_namespace_meta_v1';
+const ROOM_ASSET_PATH = 'room/index.html?v=room-entry-staticclass&satoshi=required&entry=pullback';
+const ROOM_NATIVE_COVER_STYLE = {
+  position: 'absolute',
+  left: 0,
+  right: 0,
+  top: 0,
+  bottom: 0,
+  zIndex: 9999,
+  elevation: 9999,
+  backgroundColor: '#000',
+};
+
+const TcpSocket = TcpSocketModule.default || TcpSocketModule;
 
 const OFFICIAL_NODES = [
   { id: 'n0', host: 'x.xkeva.com', ssl: '50002', tcp: '' },
   { id: 'n1', host: 'y.xkeva.com', ssl: '50002', tcp: '' },
   { id: 'n2', host: 'z.xkeva.com', ssl: '50002', tcp: '' },
-  { id: 'n3', host: 'ec.kevacoin.org', ssl: '50002', tcp: '' },
 ];
+const CUSTOM_ELECTRUM_NODES_KEY = 'home_custom_electrum_nodes_v1';
 
 const PROBE_COOLDOWN_MS = 2 * 60 * 1000;
 
@@ -40,6 +56,104 @@ let lastProbeCache = {
 
 const withTimeout = (p, ms) =>
   Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), ms))]);
+
+const parseHttpUrlForSocket = url => {
+  const match = String(url || '').match(/^http:\/\/([^/:?#]+)(?::(\d+))?([^?#]*)(\?[^#]*)?/i);
+  if (!match) return null;
+  return {
+    host: match[1],
+    port: Number(match[2] || 80),
+    path: `${match[3] || '/'}${match[4] || ''}` || '/',
+  };
+};
+
+const normalizeElectrumNode = node => {
+  const host = String(node?.host || '').trim();
+  const protocol = node?.protocol === 'ssl' || node?.ssl ? 'ssl' : 'tcp';
+  const port = String(node?.port || node?.ssl || node?.tcp || '').trim();
+  if (!host || !/^\d+$/.test(port)) return null;
+  return {
+    id: node?.id || `custom:${protocol}:${host}:${port}`,
+    host,
+    ssl: protocol === 'ssl' ? port : '',
+    tcp: protocol === 'tcp' ? port : '',
+    custom: node?.custom === true,
+  };
+};
+
+const getCustomElectrumNodes = async () => {
+  try {
+    const raw = await AsyncStorage.getItem(CUSTOM_ELECTRUM_NODES_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed.map(item => normalizeElectrumNode({ ...item, custom: true })).filter(Boolean) : [];
+  } catch (_) {
+    return [];
+  }
+};
+
+const electrumNodeKey = node => `${node?.host || ''}:${node?.ssl || node?.tcp || ''}:${node?.ssl ? 'ssl' : 'tcp'}`;
+
+const getCurrentElectrumNode = async () => normalizeElectrumNode({
+  id: 'current-custom-node',
+  host: (await AsyncStorage.getItem(AppStorage.ELECTRUM_HOST)) || '',
+  ssl: (await AsyncStorage.getItem(AppStorage.ELECTRUM_SSL_PORT)) || '',
+  tcp: (await AsyncStorage.getItem(AppStorage.ELECTRUM_TCP_PORT)) || '',
+  custom: true,
+});
+
+const getAllElectrumNodes = async () => {
+  const customNodes = await getCustomElectrumNodes();
+  const currentNode = await getCurrentElectrumNode();
+  const byKey = new Set(OFFICIAL_NODES.map(electrumNodeKey));
+  const uniqueCustom = [...customNodes, currentNode].filter(Boolean).filter(node => {
+    const key = electrumNodeKey(node);
+    if (byKey.has(key)) return false;
+    byKey.add(key);
+    return true;
+  });
+  return [...uniqueCustom, ...OFFICIAL_NODES];
+};
+
+const saveCustomElectrumNodes = async nodes => {
+  const normalized = (Array.isArray(nodes) ? nodes : []).map(item => normalizeElectrumNode({ ...item, custom: true })).filter(Boolean);
+  await AsyncStorage.setItem(CUSTOM_ELECTRUM_NODES_KEY, JSON.stringify(normalized));
+  return normalized;
+};
+
+const tcpHttpGetText = (url, timeoutMs = 6000) => new Promise((resolve, reject) => {
+  const parsed = parseHttpUrlForSocket(url);
+  if (!parsed) {
+    reject(new Error('unsupported_url'));
+    return;
+  }
+  let done = false;
+  let socket = null;
+  let data = '';
+  const finish = (error, value) => {
+    if (done) return;
+    done = true;
+    clearTimeout(timer);
+    try { socket?.destroy?.(); } catch (_) {}
+    if (error) reject(error);
+    else resolve(value);
+  };
+  const timer = setTimeout(() => finish(new Error('tcp_timeout')), timeoutMs);
+  try {
+    socket = TcpSocket.createConnection({ host: parsed.host, port: parsed.port }, () => {
+      socket.write(`GET ${parsed.path} HTTP/1.1\r\nHost: ${parsed.host}:${parsed.port}\r\nAccept: application/json\r\nConnection: close\r\n\r\n`);
+    });
+    socket.on('data', chunk => {
+      data += String(chunk || '');
+    });
+    socket.on('error', error => finish(error));
+    socket.on('close', () => {
+      const splitAt = data.indexOf('\r\n\r\n');
+      finish(null, splitAt >= 0 ? data.slice(splitAt + 4) : data);
+    });
+  } catch (error) {
+    finish(error);
+  }
+});
 
 const nowMs = () => Date.now();
 const LAST_ROLE_SPACE_PATH = `${RNFS.DocumentDirectoryPath}/agent_chats/_last_role_space.json`;
@@ -147,6 +261,25 @@ const findSatoshiNamespaceInfo = namespacesInput => {
       .localeCompare(trimText(b?.shortCode || b?.shortId || b?.shortid || b?.namespaceId || b?.id));
   })[0] || null;
 };
+const mergeSatoshiServerNamespaceMeta = (info, meta) => {
+  if (!info || !meta) return info;
+  const namespaceId = trimText(meta.namespace_id || meta.namespaceId || meta.namespace || '');
+  const shortCode = trimText(meta.space_id || meta.shortCode || meta.short_code || '');
+  const txid = trimText(meta.txid || meta.agent_created_txid || meta.agentCreatedTxid || '');
+  const address = trimText(meta.address || meta.rootAddress || '');
+  const updatedAtUnix = Number(meta.updated_at_unix || meta.updatedAtUnix || meta.time || 0) || 0;
+  const namespaceCreateTxid = trimText(meta.namespace_create_txid || meta.namespaceCreateTxid || meta.namespace_create_tx || meta.txid || meta.txId || '');
+  return {
+    ...info,
+    ...(namespaceId ? { id: namespaceId, namespaceId } : {}),
+    ...(shortCode ? { shortCode } : {}),
+    ...(address ? { rootAddress: trimText(info.rootAddress) || address } : {}),
+    ...(txid ? { txId: txid, txid, agentCreatedTxid: txid } : {}),
+    ...(updatedAtUnix ? { agentCreatedTxTime: updatedAtUnix } : {}),
+    ...(namespaceCreateTxid ? { namespaceCreateTxid } : {}),
+    serverNamespaceMeta: meta,
+  };
+};
 const getSatoshiRequiredMemoryPaths = paths => [
   paths.roleFile,
   paths.verifiedPath,
@@ -200,6 +333,18 @@ const hasSatoshiRoleChatRecords = async info => {
   return false;
 };
 const getSatoshiDisplayId = info => trimText(info?.shortCode || info?.id || info?.namespaceId || info?.agentId || '');
+const getSelectedNodeName = async () => {
+  let host = trimText((await AsyncStorage.getItem(AppStorage.ELECTRUM_HOST)) || '');
+  if (!host) {
+    try {
+      const config = await BlueElectrum.getConfig();
+      host = trimText(config?.host || '');
+    } catch (_) {}
+  }
+  if (!host) host = trimText(OFFICIAL_NODES[0]?.host || '');
+  const official = OFFICIAL_NODES.find(node => trimText(node.host) === host);
+  return trimText(official?.host || host);
+};
 
 const withSatoshiStepTimeout = (promise, label, timeoutMs = 5000) => Promise.race([
   promise,
@@ -239,12 +384,17 @@ const buildSatoshiNavigationParams = info => {
   const text = value => String(value === undefined || value === null ? '' : value).trim();
   const namespaceId = text(info.id || info.namespaceId);
   const shortCode = text(info.shortCode || info.shortId);
+  const agentCreatedTxid = text(info.agentCreatedTxid || info.txId || info.txid);
   return {
     ...(namespaceId ? { namespaceId } : {}),
     ...(shortCode ? { shortCode } : {}),
     displayName: text(info.displayName || info.name || 'SATOSHI') || 'SATOSHI',
     walletId: text(info.walletId),
-    txid: text(info.txId || info.txid),
+    txid: agentCreatedTxid,
+    agentCreatedTxid,
+    agentCreatedTxTime: text(info.agentCreatedTxTime),
+    agentCreatedHeight: text(info.agentCreatedHeight),
+    namespaceCreateTxid: text(info.namespaceCreateTxid || info.namespace_create_txid || info.txid || info.txId || agentCreatedTxid),
     rootAddress: text(info.rootAddress),
     price: text(info.price),
     desc: text(info.desc),
@@ -277,7 +427,12 @@ export default function HomeScreen() {
   const satoshiRestoreInFlightRef = useRef(false);
   const satoshiNetworkCheckInFlightRef = useRef(null);
   const satoshiLastInfoRef = useRef(null);
+  const satoshiReadyRef = useRef(false);
   const satoshiNetworkCacheRef = useRef({ ts: 0, result: null });
+  const roomNativeCoverTimerRef = useRef(null);
+  const pendingOpenNodeWindowRef = useRef(false);
+  const [satoshiWebMode, setSatoshiWebMode] = useState('satoshi');
+  const [roomNativeCoverVisible, setRoomNativeCoverVisible] = useState(false);
 
   const satoshiNamespaceInfo = useMemo(() => findSatoshiNamespaceInfo(namespaceList), [namespaceList]);
 
@@ -347,6 +502,66 @@ export default function HomeScreen() {
     `);
   }, []);
 
+  const showRoomNativeCover = useCallback((duration = 320) => {
+    if (roomNativeCoverTimerRef.current) {
+      clearTimeout(roomNativeCoverTimerRef.current);
+    }
+    setRoomNativeCoverVisible(true);
+    roomNativeCoverTimerRef.current = setTimeout(() => {
+      roomNativeCoverTimerRef.current = null;
+      setRoomNativeCoverVisible(false);
+    }, duration);
+  }, []);
+
+  useEffect(() => () => {
+    if (roomNativeCoverTimerRef.current) {
+      clearTimeout(roomNativeCoverTimerRef.current);
+      roomNativeCoverTimerRef.current = null;
+    }
+  }, []);
+
+  const openRoomAssetWithCover = useCallback(() => {
+    showRoomNativeCover(320);
+    webviewRef.current?.injectJavaScript(`
+      (function(){
+        try {
+          var cover = document.getElementById('appRoomReturnCover');
+          if (!cover) {
+            cover = document.createElement('div');
+            cover.id = 'appRoomReturnCover';
+            (document.body || document.documentElement).appendChild(cover);
+          }
+          cover.setAttribute('style', 'position:fixed;left:0;top:0;width:100vw;height:100vh;z-index:2147483646;background:#000;pointer-events:none;');
+          document.documentElement.style.background = '#000';
+          if (document.body) document.body.style.background = '#000';
+        } catch (_) {}
+        setTimeout(function(){
+          window.location.href = 'file:///android_asset/os/${ROOM_ASSET_PATH}';
+        }, 35);
+      })();
+      true;
+    `);
+  }, [showRoomNativeCover]);
+
+  const coverCurrentWebViewForRoomReturn = useCallback(() => {
+    webviewRef.current?.injectJavaScript(`
+      (function(){
+        try {
+          var cover = document.getElementById('appRoomReturnCover');
+          if (!cover) {
+            cover = document.createElement('div');
+            cover.id = 'appRoomReturnCover';
+            (document.body || document.documentElement).appendChild(cover);
+          }
+          cover.setAttribute('style', 'position:fixed;left:0;top:0;width:100vw;height:100vh;z-index:2147483646;background:#000;pointer-events:none;');
+          document.documentElement.style.background = '#000';
+          if (document.body) document.body.style.background = '#000';
+        } catch (_) {}
+      })();
+      true;
+    `);
+  }, []);
+
   const syncHomeLanguage = useCallback(async () => {
     const lang = await resolveHomeRoleLanguage();
     postToWeb({ type: 'home_set_language', lang });
@@ -359,6 +574,32 @@ export default function HomeScreen() {
     for (const wallet of wallets) {
       const ns = await findMyNamespaces(wallet, BlueElectrum);
       namespaces = { ...namespaces, ...ns };
+    }
+    for (const nsId of Object.keys(namespaces)) {
+      const info = namespaces[nsId];
+      if (!info || trimText(info.displayName || info.name).toUpperCase() !== 'SATOSHI') continue;
+      const rootAddress = trimText(info.rootAddress || info.addr || info.address || '');
+      if (!rootAddress) continue;
+      try {
+        let cachedMeta = await getCachedServerNamespaceResult(rootAddress);
+        if (!cachedMeta) {
+          const rawMeta = await AsyncStorage.getItem(SATOSHI_SERVER_NAMESPACE_META_KEY).catch(() => '');
+          if (rawMeta) {
+            const parsedMeta = JSON.parse(rawMeta);
+            const metaAddress = trimText(parsedMeta.address || parsedMeta.rootAddress || '');
+            const metaNamespace = trimText(parsedMeta.namespace_id || parsedMeta.namespaceId || '');
+            const metaShortCode = trimText(parsedMeta.space_id || parsedMeta.shortCode || '');
+            if ((metaAddress && metaAddress === rootAddress)
+              || (metaNamespace && metaNamespace === trimText(info.id || info.namespaceId))
+              || (metaShortCode && metaShortCode === trimText(info.shortCode || info.shortId))) {
+              cachedMeta = parsedMeta;
+            }
+          }
+        }
+        if (cachedMeta) namespaces[nsId] = mergeSatoshiServerNamespaceMeta(info, cachedMeta);
+      } catch (error) {
+        console.warn('HomeScreen: failed to merge cached Satoshi server namespace meta', error);
+      }
     }
     const oldOrder = namespaceList?.order || [];
     const nextOrder = oldOrder.filter(nsid => namespaces[nsid]);
@@ -386,13 +627,13 @@ export default function HomeScreen() {
         if (typeof BlueElectrum.waitTillConnected === 'function') {
           await withTimeout(BlueElectrum.waitTillConnected(), 8000);
         }
-        await BlueElectrum.ping();
-        electrumHeight = Number(await BlueElectrum.blockchainBlock_count());
+        await withTimeout(BlueElectrum.ping(), 5000);
+        electrumHeight = Number(await withTimeout(BlueElectrum.blockchainBlock_count(), 5000));
       } catch (error) {
         console.warn('HomeScreen: failed to fetch Electrum block height', error);
       }
       try {
-        satoshiApiHeight = Number(await getServerBlockHeight());
+        satoshiApiHeight = Number(await withTimeout(getServerBlockHeight(), 5000));
       } catch (error) {
         console.warn('HomeScreen: failed to fetch Satoshi API block height', error);
       }
@@ -453,12 +694,16 @@ export default function HomeScreen() {
     }
 
     const satoshiReady = namespaceExists && memoryReady;
+    satoshiReadyRef.current = satoshiReady;
     const canOpenChatStory = satoshiReady ? await hasSatoshiRoleChatRecords(activeSatoshiInfo) : false;
     const normalizedSavedStatus = satoshiReady || savedStatus === 'ready' ? '' : savedStatus;
     const safePreferredStatus = preferredStatus === 'receiving' && savedStatus !== 'receiving' ? '' : preferredStatus;
     let nextStatus = satoshiReady ? 'ready' : (safePreferredStatus || normalizedSavedStatus || 'waiting');
     let networkStatus = null;
-    if (!satoshiReady && !['requesting', 'checking_wallet', 'creating_wallet', 'getting_address', 'receiving', 'restoring_memory', 'api_error'].includes(nextStatus)) {
+    if (namespaceExists && !satoshiReady && !['requesting', 'checking_wallet', 'creating_wallet', 'getting_address', 'api_error'].includes(nextStatus)) {
+      nextStatus = 'restoring_memory';
+    }
+    if (!satoshiReady && !namespaceExists && !['requesting', 'checking_wallet', 'creating_wallet', 'getting_address', 'receiving', 'restoring_memory', 'api_error'].includes(nextStatus)) {
       postToWeb({ type: 'satoshi_status', hasSatoshi: false, namespaceExists, status: 'checking_network', alphaValue: null, satoshiId: getSatoshiDisplayId(activeSatoshiInfo) });
       networkStatus = await checkSatoshiNetworkReady({ force: options.forceNetworkCheck === true });
       nextStatus = networkStatus.ready ? 'network_ready' : 'network_unstable';
@@ -472,6 +717,7 @@ export default function HomeScreen() {
       alphaValue: satoshiReady ? satoshiAlphaValue : null,
       canOpenChatStory,
       satoshiId: getSatoshiDisplayId(activeSatoshiInfo),
+      selectedNodeName: await getSelectedNodeName(),
       electrumHeight: networkStatus?.electrumHeight,
       satoshiApiHeight: networkStatus?.satoshiApiHeight,
       apiMessage: nextStatus === 'api_error' ? savedStatusMessage : '',
@@ -605,17 +851,60 @@ export default function HomeScreen() {
   }, [navigation, syncHomeWebState]);
 
   const openSatoshiAt = navigation?.state?.params?.openSatoshiAt;
+  const homeRoomResetAt = navigation?.state?.params?.roomResetAt;
   const isSatoshiTab = navigation?.state?.routeName === 'Satoshi';
+  const lastHandledSatoshiOpenAtRef = useRef(null);
+
   useEffect(() => {
-    if (openSatoshiAt && !isSatoshiTab) {
-      const timer = setTimeout(openSatoshiWindowFromBottomTab, 350);
-      return () => clearTimeout(timer);
-    }
-  }, [openSatoshiAt, isSatoshiTab, openSatoshiWindowFromBottomTab]);
+    if (isSatoshiTab) return undefined;
+    const unsubscribeWillBlur = navigation?.addListener?.('willBlur', coverCurrentWebViewForRoomReturn);
+    const unsubscribeDidBlur = navigation?.addListener?.('didBlur', coverCurrentWebViewForRoomReturn);
+    return () => {
+      if (typeof unsubscribeWillBlur === 'function') unsubscribeWillBlur();
+      else if (unsubscribeWillBlur && typeof unsubscribeWillBlur.remove === 'function') unsubscribeWillBlur.remove();
+      if (typeof unsubscribeDidBlur === 'function') unsubscribeDidBlur();
+      else if (unsubscribeDidBlur && typeof unsubscribeDidBlur.remove === 'function') unsubscribeDidBlur.remove();
+    };
+  }, [coverCurrentWebViewForRoomReturn, isSatoshiTab, navigation]);
+
+  useEffect(() => {
+    if (isSatoshiTab || !homeRoomResetAt) return;
+    showRoomNativeCover(340);
+    openRoomAssetWithCover();
+    const timer = setTimeout(() => {
+      navigation.setParams({ roomResetAt: null });
+    }, 340);
+    return () => clearTimeout(timer);
+  }, [homeRoomResetAt, isSatoshiTab, navigation, openRoomAssetWithCover, showRoomNativeCover]);
+
+  useEffect(() => {
+    if (!openSatoshiAt || lastHandledSatoshiOpenAtRef.current === openSatoshiAt) return;
+    lastHandledSatoshiOpenAtRef.current = openSatoshiAt;
+    const timer = setTimeout(() => {
+      if (isSatoshiTab && satoshiWebMode !== 'satoshi') {
+        pendingOpenNodeWindowRef.current = false;
+        setSatoshiWebMode('satoshi');
+      } else {
+        openSatoshiWindowFromBottomTab();
+      }
+      navigation.setParams({ openSatoshiAt: null });
+    }, isSatoshiTab ? 0 : 350);
+    return () => clearTimeout(timer);
+  }, [isSatoshiTab, navigation, openSatoshiAt, openSatoshiWindowFromBottomTab, satoshiWebMode]);
 
   const handleHomeLoadEnd = useCallback(() => {
+    if (isSatoshiTab && satoshiWebMode === 'satoshi') {
+      syncSatoshiStatus(undefined, { refreshNamespace: true }).catch(error => console.warn('HomeScreen: failed to sync Satoshi page after load', error));
+      return;
+    }
     syncHomeWebState();
-  }, [syncHomeWebState]);
+    if (isSatoshiTab && satoshiWebMode === 'desktop' && pendingOpenNodeWindowRef.current) {
+      pendingOpenNodeWindowRef.current = false;
+      setTimeout(() => {
+        webviewRef.current?.injectJavaScript(`(function(){ try { if (typeof openNodeWindow === 'function') openNodeWindow(); } catch(_) {} })(); true;`);
+      }, 180);
+    }
+  }, [isSatoshiTab, postToWeb, satoshiWebMode, syncHomeWebState, syncSatoshiStatus]);
 
   useEffect(() => {
     syncSatoshiStatus();
@@ -702,6 +991,12 @@ export default function HomeScreen() {
       const { address } = await ensureSatoshiWalletAndAddress();
       const result = await requestServerNamespace(address, '1.0.1');
       if (result && (result.status === 'sent' || result.status === 'already_sent' || result.status === 'processing')) {
+        await AsyncStorage.setItem(SATOSHI_SERVER_NAMESPACE_META_KEY, JSON.stringify({
+          ...result,
+          address,
+          rootAddress: address,
+          updated_at_unix: result.updated_at_unix || Math.floor(Date.now() / 1000),
+        })).catch(() => {});
         await AsyncStorage.setItem(SATOSHI_STATUS_KEY, 'receiving');
         postToWeb({ type: 'satoshi_status', hasSatoshi: false, namespaceExists: false, status: 'receiving', alphaValue: null, satoshiId: getSatoshiDisplayId(satoshiNamespaceInfo) });
       } else {
@@ -722,6 +1017,97 @@ export default function HomeScreen() {
     }
   }, [checkSatoshiNetworkReady, ensureSatoshiWalletAndAddress, hasSatoshiNamespace, postToWeb, refreshNamespaceListForSatoshi, triggerSatoshiMemoryRestore, satoshiNamespaceInfo]);
 
+  const openRoomInCurrentWebView = useCallback(() => {
+    if (isSatoshiTab) {
+      navigation.navigate('Home', { roomResetAt: Date.now() });
+      return;
+    }
+    setSatoshiWebMode('room');
+    openRoomAssetWithCover();
+  }, [isSatoshiTab, navigation, openRoomAssetWithCover]);
+
+  const checkNodeServiceStatuses = useCallback(async () => {
+    const normalizeStatus = (json, label, responseOk = true, fallbackStatus = 'error', endpointUrl = '') => {
+      const endpoint = parseHttpUrlForSocket(endpointUrl) || {};
+      const ok = !!(responseOk && json && (
+        json.ok === true
+        || json.configured === true
+        || json.status === 'ready'
+        || json.status === 'configured'
+        || json.status === 'ok'
+      ));
+      return {
+        ok,
+        status: json?.status || (ok ? 'ready' : fallbackStatus),
+        height: Number.isFinite(Number(json?.height || json?.block_height)) ? Number(json?.height || json?.block_height) : null,
+        message: json?.message || '',
+        label,
+        endpointHost: endpoint.host || '',
+        endpointPort: endpoint.port || null,
+      };
+    };
+    const parseJsonText = text => {
+      try { return JSON.parse(String(text || '').trim()); } catch (_) { return null; }
+    };
+    const readStatusJson = async (url, label) => {
+      let fetchError = null;
+      try {
+        const response = await withTimeout(fetch(url, { method: 'GET', headers: { Accept: 'application/json' } }), 4000);
+        const text = await response.text();
+        const json = parseJsonText(text);
+        if (json) return normalizeStatus(json, label, response.ok, `http_${response.status}`, url);
+        fetchError = new Error(`http_${response.status}_non_json`);
+      } catch (error) {
+        fetchError = error;
+      }
+      try {
+        const text = await tcpHttpGetText(url, 4000);
+        const json = parseJsonText(text);
+        if (json) return normalizeStatus(json, label, true, 'tcp_non_json', url);
+        const endpoint = parseHttpUrlForSocket(url) || {};
+        return { ok: false, status: 'tcp_non_json', height: null, message: String(text || '').slice(0, 80), label, endpointHost: endpoint.host || '', endpointPort: endpoint.port || null };
+      } catch (tcpError) {
+        const endpoint = parseHttpUrlForSocket(url) || {};
+        return { ok: false, status: 'error', height: null, message: tcpError?.message || fetchError?.message || String(tcpError || fetchError), label, endpointHost: endpoint.host || '', endpointPort: endpoint.port || null };
+      }
+    };
+    const serviceBaseForNode = node => {
+      const host = String(node?.host || '').trim();
+      if (!host) return '';
+      const isLocal = /^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[0-1])\.)/i.test(host);
+      return isLocal ? `http://${host}:8787` : `https://${host}`;
+    };
+    const serviceUrlsForNode = node => {
+      const base = serviceBaseForNode(node);
+      if (!base) return null;
+      return {
+        satoshi: `${base}/satoshi.php?action=height`,
+        xkeva: `${base}/model.php/v1/status`,
+      };
+    };
+    const nodeKeyFor = node => `${node?.host || ''}:${node?.ssl || node?.tcp || ''}:${node?.ssl ? 'ssl' : 'tcp'}`;
+
+    const nodes = await getAllElectrumNodes();
+    const perNodeEntries = await Promise.all(nodes.map(async node => {
+      const urls = serviceUrlsForNode(node);
+      if (!urls) return [node.id, { nodeKey: nodeKeyFor(node), satoshi: null, xkeva: null }];
+      const [satoshi, xkeva] = await Promise.all([
+        readStatusJson(urls.satoshi, 'Satoshi'),
+        readStatusJson(urls.xkeva, 'xKEVA'),
+      ]);
+      return [node.id, { nodeKey: nodeKeyFor(node), satoshi, xkeva }];
+    }));
+    const perNode = Object.fromEntries(perNodeEntries);
+
+    const currentHost = (await AsyncStorage.getItem(AppStorage.ELECTRUM_HOST)) || '';
+    const currentSsl = (await AsyncStorage.getItem(AppStorage.ELECTRUM_SSL_PORT)) || '';
+    const currentTcp = (await AsyncStorage.getItem(AppStorage.ELECTRUM_TCP_PORT)) || '';
+    const currentKey = nodeKeyFor({ host: currentHost, ssl: currentSsl, tcp: currentTcp });
+    const currentEntry = Object.values(perNode).find(entry => entry?.nodeKey === currentKey) || null;
+
+    return { satoshi: currentEntry?.satoshi || null, xkeva: currentEntry?.xkeva || null, perNode };
+  }, []);
+
   const handleMessage = useCallback(
     async event => {
       const msg = event.nativeEvent && event.nativeEvent.data;
@@ -738,7 +1124,7 @@ export default function HomeScreen() {
         const host = (await AsyncStorage.getItem(AppStorage.ELECTRUM_HOST)) || '';
         const ssl = (await AsyncStorage.getItem(AppStorage.ELECTRUM_SSL_PORT)) || '';
         const tcp = (await AsyncStorage.getItem(AppStorage.ELECTRUM_TCP_PORT)) || '';
-        postToWeb({ type: 'electrum_state', current: { host, ssl, tcp }, nodes: OFFICIAL_NODES });
+        postToWeb({ type: 'electrum_state', current: { host, ssl, tcp }, nodes: await getAllElectrumNodes() });
         return;
       }
 
@@ -747,7 +1133,8 @@ export default function HomeScreen() {
 
         postToWeb({ type: 'electrum_probe_reset', seq: mySeq });
 
-        for (const node of OFFICIAL_NODES) {
+        const electrumNodes = await getAllElectrumNodes();
+        for (const node of electrumNodes) {
           if (mySeq !== probeSeqRef.current) {
             return;
           }
@@ -801,7 +1188,8 @@ export default function HomeScreen() {
 
         const tempResultById = {};
 
-        for (const node of OFFICIAL_NODES) {
+        const electrumNodes = await getAllElectrumNodes();
+        for (const node of electrumNodes) {
           if (mySeq !== probeSeqRef.current) {
             return;
           }
@@ -855,8 +1243,54 @@ export default function HomeScreen() {
         return;
       }
 
+      if (obj && obj.type === 'node_services_get_status') {
+        const status = await checkNodeServiceStatuses();
+        postToWeb({ type: 'node_services_status', ...status });
+        return;
+      }
+
+      if (obj && obj.type === 'electrum_add_custom_node') {
+        const node = normalizeElectrumNode({ host: obj.host, port: obj.port, protocol: obj.protocol, custom: true });
+        if (!node) return;
+        const existing = await getCustomElectrumNodes();
+        const next = [node, ...existing.filter(item => item.id !== node.id)];
+        await saveCustomElectrumNodes(next);
+        lastProbeCache = { ts: 0, resultById: {} };
+        postToWeb({ type: 'electrum_state', current: {
+          host: (await AsyncStorage.getItem(AppStorage.ELECTRUM_HOST)) || '',
+          ssl: (await AsyncStorage.getItem(AppStorage.ELECTRUM_SSL_PORT)) || '',
+          tcp: (await AsyncStorage.getItem(AppStorage.ELECTRUM_TCP_PORT)) || '',
+        }, nodes: await getAllElectrumNodes() });
+        return;
+      }
+
+      if (obj && obj.type === 'electrum_remove_custom_node') {
+        const existing = await getCustomElectrumNodes();
+        const removeNode = normalizeElectrumNode({ id: obj.id, host: obj.host, ssl: obj.ssl, tcp: obj.tcp, custom: true });
+        const removeKey = removeNode ? electrumNodeKey(removeNode) : '';
+        await saveCustomElectrumNodes(existing.filter(item => item.id !== obj.id && electrumNodeKey(item) !== removeKey));
+
+        const currentNode = await getCurrentElectrumNode();
+        if (currentNode && removeKey && electrumNodeKey(currentNode) === removeKey) {
+          await AsyncStorage.setItem(AppStorage.ELECTRUM_HOST, 'x.xkeva.com');
+          await AsyncStorage.setItem(AppStorage.ELECTRUM_SSL_PORT, '50002');
+          await AsyncStorage.setItem(AppStorage.ELECTRUM_TCP_PORT, '');
+          try {
+            BlueElectrum.forceDisconnect();
+          } catch (_) {}
+        }
+
+        lastProbeCache = { ts: 0, resultById: {} };
+        postToWeb({ type: 'electrum_state', current: {
+          host: (await AsyncStorage.getItem(AppStorage.ELECTRUM_HOST)) || '',
+          ssl: (await AsyncStorage.getItem(AppStorage.ELECTRUM_SSL_PORT)) || '',
+          tcp: (await AsyncStorage.getItem(AppStorage.ELECTRUM_TCP_PORT)) || '',
+        }, nodes: await getAllElectrumNodes() });
+        return;
+      }
+
       if (obj && obj.type === 'electrum_use') {
-        const node = OFFICIAL_NODES.find(item => item.id === obj.id);
+        const node = (await getAllElectrumNodes()).find(item => item.id === obj.id) || normalizeElectrumNode({ host: obj.host, ssl: obj.ssl, tcp: obj.tcp });
         if (!node) {
           return;
         }
@@ -881,8 +1315,11 @@ export default function HomeScreen() {
         const record = await readLastSpaceRecord(LAST_ROLE_SPACE_PATH);
         const homeLang = await resolveHomeRoleLanguage();
         if (!record || (!record.namespaceId && !record.shortCode)) { Alert.alert('Role', getHomeAlertText(homeLang, 'noRole')); return; }
-        if (typeof navigation.push === 'function') navigation.push('AgentRole', { ...record, roleEntrySource: 'desktop-last-space', autoCommand: record.autoCommand || '/role' });
-        else navigation.navigate('AgentRole', { ...record, roleEntrySource: 'desktop-last-space', autoCommand: record.autoCommand || '/role' });
+        const roleParams = { ...record, roleEntrySource: 'desktop-last-space', autoCommand: record.autoCommand || '/role', suppressAutoLinkStart: true };
+        setTimeout(() => {
+          if (typeof navigation.push === 'function') navigation.push('AgentRole', roleParams);
+          else navigation.navigate('AgentRole', roleParams);
+        }, 0);
         return;
       } else if (msg === 'open_story_last') {
         const record = await readLastSpaceRecord(LAST_STORY_SPACE_PATH);
@@ -934,11 +1371,30 @@ export default function HomeScreen() {
       } else if (msg === 'open_guest_following') {
         navigation.navigate('Namespaces', { initialTab: 'following', openGuest: true });
         return;
+      } else if (msg === 'open_room') {
+        openRoomInCurrentWebView();
+        return;
       } else if (msg === 'open_satoshi_get_namespace') {
         await requestSatoshiNamespace();
         return;
       } else if (msg === 'open_satoshi_namespace_list') {
         navigation.navigate('Namespaces', { initialTab: 'me' });
+        return;
+      } else if (msg === 'open_satoshi_desktop') {
+        if (isSatoshiTab) {
+          pendingOpenNodeWindowRef.current = false;
+          setSatoshiWebMode('desktop');
+        } else {
+          navigation.navigate('Satoshi', { openSatoshiAt: Date.now() });
+        }
+        return;
+      } else if (msg === 'open_node_window') {
+        if (isSatoshiTab) {
+          pendingOpenNodeWindowRef.current = true;
+          setSatoshiWebMode('desktop');
+        } else {
+          webviewRef.current?.injectJavaScript(`(function(){ try { if (typeof openNodeWindow === 'function') openNodeWindow(); } catch(_) {} })(); true;`);
+        }
         return;
       } else if (msg === 'open_satoshi_role' || msg === 'open_satoshi_chat' || msg === 'open_satoshi_story') {
         const info = findSatoshiNamespaceInfo(namespaceList) || satoshiNamespaceInfo || satoshiLastInfoRef.current;
@@ -974,7 +1430,7 @@ export default function HomeScreen() {
         }
         const refreshStatuses = ['requesting', 'checking_network', 'network_unstable', 'checking_wallet', 'creating_wallet', 'getting_address', 'receiving', 'restoring_memory'];
         const statusResult = await syncSatoshiStatus(refreshStatuses.includes(savedStatus) ? savedStatus : undefined, { refreshNamespace: true, forceNetworkCheck: true });
-        if ((savedStatus === 'receiving' || savedStatus === 'restoring_memory') && statusResult?.namespaceExists && !statusResult?.hasSatoshi) {
+        if (statusResult?.namespaceExists && !statusResult?.hasSatoshi) {
           await AsyncStorage.setItem(SATOSHI_STATUS_KEY, 'restoring_memory').catch(() => {});
           triggerSatoshiMemoryRestore(statusResult.info || satoshiLastInfoRef.current).catch(error => console.warn('HomeScreen: Satoshi memory restore trigger failed after refresh', error));
         }
@@ -986,7 +1442,7 @@ export default function HomeScreen() {
 
       // legacy structured messages are ignored now that Get Agents runs as a native screen
     },
-    [hasSatoshiNamespace, namespaceList, navigation, requestSatoshiNamespace, satoshiNamespaceInfo, syncSatoshiStatus, triggerSatoshiMemoryRestore],
+    [checkNodeServiceStatuses, hasSatoshiNamespace, isSatoshiTab, namespaceList, navigation, openRoomInCurrentWebView, postToWeb, requestSatoshiNamespace, satoshiNamespaceInfo, syncSatoshiStatus, triggerSatoshiMemoryRestore],
   );
 
   const handleShouldStartLoad = useCallback(
@@ -996,25 +1452,33 @@ export default function HomeScreen() {
         handleMessage({ nativeEvent: { data: 'open_satoshi_get_namespace' } });
         return false;
       }
+      if (url === 'appd://open_room') {
+        handleMessage({ nativeEvent: { data: 'open_room' } });
+        return false;
+      }
+      if (url === 'appd://open_node_window') {
+        handleMessage({ nativeEvent: { data: 'open_node_window' } });
+        return false;
+      }
       return true;
     },
     [handleMessage],
   );
 
   const handleSatoshiNativeGetPress = useCallback(() => {
-    if (hasSatoshiNamespace) {
-      navigation.navigate('Namespaces', { initialTab: 'me' });
+    if (satoshiReadyRef.current || hasSatoshiNamespace) {
+      openRoomInCurrentWebView();
       return;
     }
     requestSatoshiNamespace().catch(error => console.warn('HomeScreen: native Satoshi get press failed', error));
-  }, [hasSatoshiNamespace, navigation, requestSatoshiNamespace]);
+  }, [hasSatoshiNamespace, openRoomInCurrentWebView, requestSatoshiNamespace]);
 
   return (
     <View style={{ flex: 1, backgroundColor: '#000' }}>
       <StatusBar hidden />
       <WebView
         ref={webviewRef}
-        source={{ uri: isSatoshiTab ? 'file:///android_asset/os/satoshi.html' : 'file:///android_asset/os/index.html' }}
+        source={{ uri: isSatoshiTab ? (satoshiWebMode === 'satoshi' ? 'file:///android_asset/os/satoshi.html' : 'file:///android_asset/os/index.html') : `file:///android_asset/os/${ROOM_ASSET_PATH}` }}
         originWhitelist={['*']}
         javaScriptEnabled
         domStorageEnabled
@@ -1025,8 +1489,13 @@ export default function HomeScreen() {
         onShouldStartLoadWithRequest={handleShouldStartLoad}
         onLoadEnd={handleHomeLoadEnd}
         mixedContentMode="always"
+        style={{ flex: 1, backgroundColor: '#000' }}
+        containerStyle={{ backgroundColor: '#000' }}
       />
-      {isSatoshiTab ? (
+      {(roomNativeCoverVisible || (!isSatoshiTab && !!homeRoomResetAt)) ? (
+        <View pointerEvents="none" style={ROOM_NATIVE_COVER_STYLE} />
+      ) : null}
+      {isSatoshiTab && satoshiWebMode === 'satoshi' ? (
         <TouchableOpacity
           accessibilityLabel="Get Satoshi Card"
           activeOpacity={1}

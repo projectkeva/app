@@ -177,6 +177,11 @@ const KevaTabNavigator = createBottomTabNavigator({
       path: 'home',
       navigationOptions: {
         headerShown: false,
+        tabBarOnPress: ({ navigation, defaultHandler }) => {
+          navigation.setParams({ roomResetAt: Date.now() });
+          if (navigation.isFocused && navigation.isFocused()) return;
+          defaultHandler();
+        },
       },
     },
     Satoshi: {
@@ -184,6 +189,11 @@ const KevaTabNavigator = createBottomTabNavigator({
       path: 'satoshi',
       navigationOptions: {
         headerShown: false,
+        tabBarOnPress: ({ navigation, defaultHandler }) => {
+          navigation.setParams({ openSatoshiAt: Date.now() });
+          if (navigation.isFocused && navigation.isFocused()) return;
+          defaultHandler();
+        },
       },
     },
     Namespaces: {
@@ -237,6 +247,11 @@ const KevaTabNavigator = createBottomTabNavigator({
       labelPosition: 'below-icon',
     },
     defaultNavigationOptions: ({ navigation }) => ({
+      tabBarOnPress: ({ navigation, defaultHandler }) => {
+        navigation.setParams({ tabPressedAt: Date.now() });
+        if (navigation.isFocused && navigation.isFocused()) return;
+        defaultHandler();
+      },
       tabBarIcon: ({ focused, horizontal, tintColor }) => {
         const { routeName } = navigation.state;
         let iconName;

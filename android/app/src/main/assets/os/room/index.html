@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="zh-CN" class="room-entry-pullback" style="background:#000;color-scheme:dark;">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="color-scheme" content="dark">
+    <meta name="theme-color" content="#000000">
+    <meta http-equiv="Content-Security-Policy" content="default-src * 'unsafe-inline' data: blob: file:;">
+    <title>Room</title>
+    <style>
+      html,body{background:#000;margin:0;overflow:hidden;}
+      html.room-entry-pullback .preview-shell{visibility:hidden;}
+      html.room-entry-pullback .home-zoom-transition{opacity:0!important;}
+      #roomBootCover{display:none;}
+      html.room-entry-pullback #roomBootCover{
+        display:block;
+        position:fixed;
+        inset:0;
+        z-index:2147483647;
+        pointer-events:none;
+        overflow:hidden;
+        background:#000;
+      }
+      .room-boot-shutter{
+        position:absolute;
+        left:0;
+        width:100vw;
+        height:50vh;
+        background:#000;
+        transform:scaleY(0);
+        transition:transform 420ms cubic-bezier(0.16,0.82,0.18,1);
+      }
+      .room-boot-shutter-top{
+        top:0;
+        transform-origin:top center;
+        box-shadow:inset 0 -2px 0 rgba(255,69,232,.22),inset 0 -5px 12px rgba(125,246,255,.12);
+      }
+      .room-boot-shutter-bottom{
+        bottom:0;
+        transform-origin:bottom center;
+        box-shadow:inset 0 2px 0 rgba(125,246,255,.2),inset 0 5px 12px rgba(255,69,232,.12);
+      }
+      html.room-entry-pullback.room-entry-closing .room-boot-shutter{transform:scaleY(1);}
+      html.room-entry-pullback.room-entry-line-hidden .room-boot-shutter{box-shadow:none;}
+    </style>
+    <script>
+      if (!/(?:^|[?&])entry=pullback(?:&|$)/.test(window.location.search)) {
+        document.documentElement.classList.remove("room-entry-pullback");
+      }
+    </script>
+  </head>
+  <body style="background:#000;margin:0;overflow:hidden;" bgcolor="#000000">
+    <div id="roomBootCover" aria-hidden="true">
+      <div class="room-boot-shutter room-boot-shutter-top"></div>
+      <div class="room-boot-shutter room-boot-shutter-bottom"></div>
+    </div>
+    <link rel="stylesheet" href="./src/styles.css?v=room-entry-staticclass">
+    <main class="preview-shell" aria-label="Room">
+      <div id="roomStage" class="room-stage">
+        <canvas id="roomCanvas" width="640" height="480" tabindex="0" aria-label="Interactive room"></canvas>
+      </div>
+    </main>
+    <div id="homeZoomTransition" class="home-zoom-transition" aria-hidden="true">
+      <iframe id="homePreviewFrame" src="../index.html?v=room-entry-staticclass-preview" title="Home preview"></iframe>
+    </div>
+    <script src="./src/main.js?v=room-entry-staticclass"></script>
+  </body>
+</html>
