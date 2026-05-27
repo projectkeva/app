@@ -1,6 +1,6 @@
 // HomeScreen.js (clean, no debug toolbar)
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { View, StatusBar, Alert, TouchableOpacity } from 'react-native';
+import { View, StatusBar, Alert } from 'react-native';
 import RNFS from 'react-native-fs';
 import TcpSocketModule from 'react-native-tcp-socket';
 import AsyncStorage from '@react-native-community/async-storage';
@@ -1464,15 +1464,6 @@ export default function HomeScreen() {
     },
     [handleMessage],
   );
-
-  const handleSatoshiNativeGetPress = useCallback(() => {
-    if (satoshiReadyRef.current || hasSatoshiNamespace) {
-      openRoomInCurrentWebView();
-      return;
-    }
-    requestSatoshiNamespace().catch(error => console.warn('HomeScreen: native Satoshi get press failed', error));
-  }, [hasSatoshiNamespace, openRoomInCurrentWebView, requestSatoshiNamespace]);
-
   return (
     <View style={{ flex: 1, backgroundColor: '#000' }}>
       <StatusBar hidden />
@@ -1494,14 +1485,6 @@ export default function HomeScreen() {
       />
       {(roomNativeCoverVisible || (!isSatoshiTab && !!homeRoomResetAt)) ? (
         <View pointerEvents="none" style={ROOM_NATIVE_COVER_STYLE} />
-      ) : null}
-      {isSatoshiTab && satoshiWebMode === 'satoshi' ? (
-        <TouchableOpacity
-          accessibilityLabel="Get Satoshi Card"
-          activeOpacity={1}
-          onPress={handleSatoshiNativeGetPress}
-          style={{ position: 'absolute', left: '30%', top: '47%', width: '40%', height: '5.5%', backgroundColor: 'transparent' }}
-        />
       ) : null}
     </View>
   );

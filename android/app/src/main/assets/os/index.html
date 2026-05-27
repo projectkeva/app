@@ -617,36 +617,6 @@ body.room-screen-close.room-screen-line-hidden::before,body.room-screen-close.ro
 }
 
 
-.satoshi-touch-proxy{
-  position:absolute;
-  left:30.2%;
-  width:39.6%;
-  height:4.7%;
-  border:0;
-  border-radius:6px;
-  padding:0;
-  margin:0;
-  z-index:20;
-  cursor:pointer;
-  font:0/0 a;
-  color:transparent;
-  background:transparent;
-  box-shadow:none;
-  appearance:none;
-  -webkit-appearance:none;
-}
-.satoshi-touch-proxy:disabled{
-  cursor:default;
-}
-.satoshi-touch-get.satoshi-here{
-  background:transparent;
-  color:transparent;
-  box-shadow:none;
-}
-.satoshi-touch-get{top:50.5%;}
-.satoshi-touch-role{top:59.2%;}
-.satoshi-touch-chat{top:67.8%;}
-.satoshi-touch-story{top:76.4%;}
 
 </style>
 <script>
@@ -740,11 +710,7 @@ window.addEventListener('load', updateDesktopScale);
 <div class="notepad-window" id="satoshiWindow">
   <div class="title-bar"><span>Satoshi</span><button class="close-btn">×</button></div>
   <div class="content satoshi-content" style="padding:0;position:relative;">
-    <iframe src="satoshi.html" style="width:100%;height:100%;border:0;pointer-events:none;"></iframe>
-    <button type="button" class="satoshi-touch-proxy satoshi-touch-get" aria-label="Get Satoshi Card" onclick="handleSatoshiAction('get')">Get Satoshi Card</button>
-    <button type="button" class="satoshi-touch-proxy satoshi-touch-role" aria-label="Satoshi Role" onclick="handleSatoshiAction('role')">Role</button>
-    <button type="button" class="satoshi-touch-proxy satoshi-touch-chat" aria-label="Satoshi Chat" onclick="handleSatoshiAction('chat')">Chat</button>
-    <button type="button" class="satoshi-touch-proxy satoshi-touch-story" aria-label="Satoshi Story" onclick="handleSatoshiAction('story')">Story</button>
+    <iframe src="satoshi.html" style="width:100%;height:100%;border:0;"></iframe>
   </div>
 </div>
 
@@ -1299,21 +1265,12 @@ document.querySelectorAll('.notepad-window .close-btn').forEach(btn=>{
   }
 
 
-  function syncSatoshiTouchProxies(){
-    // Intentionally no-op: parent proxy hitboxes use calibrated static CSS.
-    // Dynamic iframe rect reads were unreliable in Android WebView and shifted hitboxes.
-  }
-
-  function scheduleSatoshiTouchProxySync(){
-    syncSatoshiTouchProxies();
-  }
 
   function syncSatoshiFrame(){
     postToSatoshiFrame(latestSatoshiStatus);
     if(window.HomeI18n && typeof window.HomeI18n.getLanguage==='function'){
       postToSatoshiFrame({type:'home_set_language',lang:HomeI18n.getLanguage()});
     }
-    scheduleSatoshiTouchProxySync();
   }
 
   function refreshSatoshiFrame(){
@@ -1347,25 +1304,9 @@ document.querySelectorAll('.notepad-window .close-btn').forEach(btn=>{
   }
 
   function updateSatoshiGetButton(){
-    const btn=document.querySelector('.satoshi-touch-get');
-    if(!btn)return;
-    scheduleSatoshiTouchProxySync();
-    btn.style.display='';
-    btn.classList.remove('satoshi-here');
-    if(latestSatoshiStatus && isSatoshiBusyStatus(latestSatoshiStatus.status)){
-      btn.disabled=true;
-      btn.textContent='Get Satoshi Card';
-      return;
-    }
     if(latestSatoshiStatus && latestSatoshiStatus.hasSatoshi){
-      btn.disabled=false;
-      btn.classList.add('satoshi-here');
-      btn.textContent='Satoshi is here';
       stopSatoshiWaitTicker();
-      return;
     }
-    btn.disabled=false;
-    btn.textContent='Get Satoshi Card';
   }
 
   function startSatoshiWaitTicker(){
@@ -1448,8 +1389,7 @@ document.querySelectorAll('.notepad-window .close-btn').forEach(btn=>{
         stopSatoshiWaitTicker();
         updateSatoshiGetButton();
         postToSatoshiFrame(latestSatoshiStatus);
-        scheduleSatoshiTouchProxySync();
-      }
+          }
       return;
     }
 
@@ -1524,8 +1464,7 @@ document.querySelectorAll('.notepad-window .close-btn').forEach(btn=>{
   window.addEventListener('message',event=>handleNativeMessage(event.data));
   document.addEventListener('message',event=>handleNativeMessage(event.data));
   const satoshiFrame=getSatoshiFrame();
-  if(satoshiFrame)satoshiFrame.addEventListener('load',()=>{syncSatoshiFrame();scheduleSatoshiTouchProxySync();});
-  window.addEventListener('resize',scheduleSatoshiTouchProxySync);
+  if(satoshiFrame)satoshiFrame.addEventListener('load',()=>{syncSatoshiFrame();});
 
   // === 桌面图标点击逻辑（含自定义网址） ===
   desktopIcons.addEventListener('click',e=>{
@@ -1586,8 +1525,7 @@ document.querySelectorAll('.notepad-window .close-btn').forEach(btn=>{
       postNativeMessage('refresh_satoshi_status');
       syncSatoshiFrame();
       updateSatoshiGetButton();
-      scheduleSatoshiTouchProxySync();
-      return;
+        return;
     }
     if(app==='setting'){
       document.getElementById('settingsWindow').style.display='block';
